@@ -103,7 +103,11 @@ void Collisions::collide(Options& species1, Options& species2, const Field3D& nu
             BoutReal gz = mesh->getGlobalZIndex(iz);
 
             if (gx == 3) {
-              output << std::setw(10) << nu_12(ix,iy,iz) << "\t" << nu(ix, iy, iz) << "\n";
+              // output << std::setw(10) << nu_12(ix,iy,iz) << "\t" << nu(ix, iy, iz) << "\n";
+              Field3D k1 =  getNonFinal<Field3D>(species1["collision_frequency"]);
+              Field3D k2 =  getNonFinal<Field3D>(species2["collision_frequency"]);
+
+              output << std::setw(10) << k1(ix,iy,iz) << "\t" << k2(ix, iy, iz) << "\n";
             }
           }
         }
