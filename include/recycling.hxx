@@ -58,16 +58,16 @@ private:
   bool diagnose; ///< Save additional post-processing variables?
 
   Field3D density_source, energy_source; ///< Recycling particle and energy sources for all locations
-  Field2D is_pump; ///< 1 = pump, 0 = no pump. Works only in SOL/PFR
+  Field3D energy_flow_ylow, energy_flow_xlow; ///< Cell edge fluxes used for calculating fast recycling energy source
+  Field3D particle_flow_xlow; ///< Radial wall particle fluxes for recycling calc. No need to get poloidal from here, it's calculated from sheath velocity
+
+  Field2D is_pump; ///< 1 = pump, 0 = no pump. Works only in SOL/PFR. Provided by user in grid file.
 
   // Recycling particle and energy sources for the different sources of recycling
   // Note that SOL, PFR and pump are not applicable to 1D
   Field3D target_recycle_density_source, target_recycle_energy_source; 
   Field3D wall_recycle_density_source, wall_recycle_energy_source;  ///< Recycling particle and energy sources for pfr + sol recycling
-  Field3D pump_recycle_density_source, pump_recycle_energy_source; 
-
-  Field3D radial_particle_outflow, radial_energy_outflow;  ///< Radial fluxes coming from evolve_density and evolve_pressure used in recycling calc
-  
+  Field3D pump_density_source, pump_energy_source;  ///< Recycling particle and energy sources for pump recycling
 
 };
 
