@@ -351,6 +351,7 @@ void NeutralMixed::finally(const Options& state) {
     Vector3D v_perp = -Dnn * Grad_perp(logPnlim);
 
     // Parallel velocity
+    // TODO: Remove later if still not used
     Vector3D v_par;
     auto* coord = mesh->getCoordinates();
     v_par.covariant = true;
@@ -360,8 +361,8 @@ void NeutralMixed::finally(const Options& state) {
 
     // Particle flux reduction factor
     if (particle_flux_limiter) {
-      // Total velocity, perpendicular + parallel
-      Vector3D v_total = v_perp + v_par;
+      // Only perpendicular velocity - parallel transport not counted towards limiter
+      Vector3D v_total = v_perp;
       Field3D v_abs = sqrt(v_total * v_total); // |v dot v|
 
       // Magnitude of the particle flux
@@ -373,20 +374,22 @@ void NeutralMixed::finally(const Options& state) {
       particle_flux_factor = pow(1. + pow(particle_flux_abs / (flux_limit_alpha * particle_limit),
                                           flux_limit_gamma),
                                 -1./flux_limit_gamma);
+
+      // Kappa and eta are calculated from D, so they must be updated now that we limited D
+      // Note that D itself is limited later
+      kappa_n *= particle_flux_factor;
+      eta_n *= particle_flux_factor;
+
     } else {
       particle_flux_factor = 1.0;
     }
 
-    if (momentum_flux_limiter) {
+    if ((momentum_flux_limiter) and (neutral_viscosity)) {
       // Flux of parallel momentum
-      // Note: The perpendicular particle flux is scaled by particle_flux factor.
-      //       The resulting momentum flux factor then only applies to viscosity
-      //       (parallel and perpendicular)
-      Vector3D momentum_flux = NVn * (v_par + particle_flux_factor * v_perp);
-      if (neutral_viscosity) {
-        // Both perpendicular and parallel viscosity
-        momentum_flux -= eta_n * Grad(Vn);
-      }
+      // Note: The perpendicular advection of momentum is scaled by the particle flux factor.
+      //       The perpendicular diffusion of momentum (viscosity) is scaled by the momentum flux factor.
+      //       Parallel transport is not touched.
+      Vector3D momentum_flux = -eta_n * Grad(Vn);
       Field3D momentum_flux_abs = sqrt(momentum_flux * momentum_flux);
       Field3D momentum_limit = Pnlim;
 
@@ -400,11 +403,11 @@ void NeutralMixed::finally(const Options& state) {
     if (heat_flux_limiter) {
       // Apply limiter to flux of heat
       // Note:
-      //  - Limiter calculated using perpendicular particle flux limiter
-      //  - Only applied to conduction term (parallel & perpendicular)
-      Vector3D heat_flux = (3./2) * Pn * v_par
-        + (5./2) * Pn * particle_flux_factor * v_perp
-        - kappa_n * Grad(Tn);
+      //  - Convection limited by particle flux limiter
+      //  - Conduction limited by heat flux limiter
+      //  - Heat flux limiter calculated only from conduction transport
+      Vector3D heat_flux = - kappa_n * Grad(Tn);
+        
 
       Field3D heat_flux_abs = sqrt(heat_flux * heat_flux);
 
@@ -465,7 +468,7 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Pn) = -FV::Div_par_mod<hermes::Limiter>(Pn, Vn, sound_speed) // Advection
     - (2. / 3) * Pn * Div_par(Vn)                       // Compression
     + FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim)   // Perpendicular advection: q = 5/2 p u_perp
-    + (2. / 3) * (FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn)      // Perpendicular Conduction
+    + (2. / 3) * (FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn)      // Perpendicular conduction
                   + FV::Div_par_K_Grad_par(kappa_n * heat_flux_factor, Tn))  // Parallel conduction
     ;
 
