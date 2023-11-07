@@ -377,8 +377,8 @@ void NeutralMixed::finally(const Options& state) {
 
       // Kappa and eta are calculated from D, so they must be updated now that we limited D
       // Note that D itself is limited later
-      kappa_n *= particle_flux_factor;
-      eta_n *= particle_flux_factor;
+      // kappa_n *= particle_flux_factor;
+      // eta_n *= particle_flux_factor;
 
     } else {
       particle_flux_factor = 1.0;
