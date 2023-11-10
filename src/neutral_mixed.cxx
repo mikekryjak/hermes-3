@@ -105,6 +105,9 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
 
   diagnose =
       options["diagnose"].doc("Save additional diagnostics?").withDefault<bool>(false);
+    
+  diagnose_eqns = 
+      options["diagnose_eqns"].doc("Save equation term diagnostics?").withDefault<bool>(false);
 
   AA = options["AA"].doc("Particle atomic mass. Proton = 1").withDefault(1.0);
 
@@ -463,21 +466,31 @@ void NeutralMixed::finally(const Options& state) {
   // Neutral pressure
   TRACE("Neutral pressure");
 
+  SPd_par_adv = -FV::Div_par_mod<hermes::Limiter>(Pn, Vn, sound_speed);
+  SPd_par_compr = -(2. / 3) * Pn * Div_par(Vn);
+  SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+  SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+  SPd_par_cond = FV::Div_par_K_Grad_par(kappa_n * heat_flux_factor, Tn);
+  
   // Perpendicular advection scaled by particle_flux_factor
   // Perpendicular and parallel conduction scaled by heat_flux_factor
-  ddt(Pn) = -FV::Div_par_mod<hermes::Limiter>(Pn, Vn, sound_speed) // Advection
-    - (2. / 3) * Pn * Div_par(Vn)                       // Compression
-    + FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim)   // Perpendicular advection: q = 5/2 p u_perp
-    + (2. / 3) * (FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn)      // Perpendicular conduction
-                  + FV::Div_par_K_Grad_par(kappa_n * heat_flux_factor, Tn))  // Parallel conduction
+  ddt(Pn) = SPd_par_adv // Advection
+          + SPd_par_compr                       // Compression
+          + SPd_perp_adv   // Perpendicular advection: q = 5/2 p u_perp
+          + SPd_perp_cond      // Perpendicular conduction
+          + SPd_par_cond  // Parallel conduction
     ;
 
   Sp = pressure_source;
+  SPd_src = (2. / 3) * get<Field3D>(localstate["energy_source"]);     // Sources set by collisions and reactions
+  SPd_ext_src = pressure_source;    // Sources set by the user
+
   if (localstate.isSet("energy_source")) {
-    Sp += (2. / 3) * get<Field3D>(localstate["energy_source"]);
+    Sp += SPd_src;
   }
   ddt(Pn) += Sp;
 
+  SPd_visc_heat = 0;
   if (neutral_viscosity) {
     // Scaled by momentum flux factor
     Field3D momentum_source = FV::Div_a_Grad_perp(eta_n * momentum_flux_factor, Vn)    // Perpendicular viscosity
@@ -485,7 +498,9 @@ void NeutralMixed::finally(const Options& state) {
       ;
 
     ddt(NVn) += momentum_source; // Viscosity
-    ddt(Pn) -= (2. / 3) * Vn * momentum_source; // Viscous heating
+
+    SPd_visc_heat = -(2. / 3) * Vn * momentum_source;
+    ddt(Pn) += SPd_visc_heat; // Viscous heating
   }
 
   BOUT_FOR(i, Pn.getRegion("RGN_ALL")) {
@@ -589,6 +604,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " diffusion coefficient"},
                     {"source", "neutral_mixed"}});
+
     set_with_attrs(state[std::string("eta_") + name], eta_n,
                    {{"time_dimension", "t"},
                     {"units", "Pa s"},
@@ -596,6 +612,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "viscosity"},
                     {"long_name", name + " viscosity"},
                     {"source", "neutral_mixed"}});
+
     set_with_attrs(state[std::string("kappa_") + name], kappa_n,
                    {{"time_dimension", "t"},
                     {"units", "W / m / eV"},
@@ -611,6 +628,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "density source"},
                     {"long_name", name + " number density source"},
                     {"source", "neutral_mixed"}});
+
     set_with_attrs(state[std::string("SP") + name], Sp,
                    {{"time_dimension", "t"},
                     {"units", "Pa s^-1"},
@@ -618,6 +636,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "pressure source"},
                     {"long_name", name + " pressure source"},
                     {"source", "neutral_mixed"}});
+
     set_with_attrs(state[std::string("SNV") + name], Snv,
                    {{"time_dimension", "t"},
                     {"units", "kg m^-2 s^-2"},
@@ -625,6 +644,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "momentum source"},
                     {"long_name", name + " momentum source"},
                     {"source", "neutral_mixed"}});
+
     set_with_attrs(state[std::string("S") + name + std::string("_src")], density_source,
                    {{"time_dimension", "t"},
                     {"units", "m^-3 s^-1"},
@@ -633,6 +653,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"long_name", name + " number density source"},
                     {"species", name},
                     {"source", "neutral_mixed"}});
+
     set_with_attrs(state[std::string("P") + name + std::string("_src")], pressure_source,
                    {{"time_dimension", "t"},
                     {"units", "Pa s^-1"},
@@ -667,6 +688,72 @@ void NeutralMixed::outputVars(Options& state) {
                     {"long_name", name + " heat flux factor"},
                     {"species", name},
                     {"source", "neutral_mixed"}});
+
+    if (diagnose_eqns) {
+      set_with_attrs(state[std::string("SP") + name + std::string("_par_adv")], SPd_par_adv,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "parallel advection"},
+                      {"long_name", name + " parallel advection"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_par_compr")], SPd_par_compr,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "parallel compression"},
+                      {"long_name", name + " parallel compression"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_perp_adv")], SPd_perp_adv,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "perpendicular advection"},
+                      {"long_name", name + " perpendicular advection"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_perp_cond")], SPd_perp_cond,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "perpendicular conduction"},
+                      {"long_name", name + " perpendicular conduction"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_par_cond")], SPd_par_cond,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "parallel conduction"},
+                      {"long_name", name + " parallel conduction"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_src")], SPd_src,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "collision and reaction sources"},
+                      {"long_name", name + " collision and reaction sources"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_ext_src")], SPd_ext_src,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "user set source"},
+                      {"long_name", name + " user set source"},
+                      {"source", "neutral_mixed"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_visc_heat")], SPd_visc_heat,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "viscous heating"},
+                      {"long_name", name + " viscous heating"},
+                      {"source", "neutral_mixed"}});
+    }
   }
 }
 

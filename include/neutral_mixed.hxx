@@ -59,6 +59,8 @@ private:
   Field3D momentum_flux_factor;
   Field3D heat_flux_factor;
 
+  Field3D SPd_par_adv, SPd_par_compr, SPd_perp_adv, SPd_perp_cond, SPd_par_cond, SPd_src, SPd_ext_src, SPd_visc_heat; ///< Neutral pressure terms
+
   bool neutral_viscosity; ///< include viscosity?
 
   bool precondition {true}; ///< Enable preconditioner?
@@ -68,7 +70,7 @@ private:
   Field3D Sn, Sp, Snv; ///< Particle, pressure and momentum source
 
   bool output_ddt; ///< Save time derivatives?
-  bool diagnose; ///< Save additional diagnostics?
+  bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
 };
 
 namespace {
