@@ -90,6 +90,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .doc("Optional maximum mean free path in [m] for diffusive processes. < 0 is off")
     .withDefault(0.1);
 
+  perp_compression = options["perp_compression"]
+    .doc("Include factor of 5/3 in perpendicular pressure advection?")
+    .withDefault<bool>(true);
+
   if (precondition) {
     inv = std::unique_ptr<Laplacian>(Laplacian::create(&options["precon_laplace"]));
 
@@ -468,7 +472,13 @@ void NeutralMixed::finally(const Options& state) {
 
   SPd_par_adv = -FV::Div_par_mod<hermes::Limiter>(Pn, Vn, sound_speed);
   SPd_par_compr = -(2. / 3) * Pn * Div_par(Vn);
-  SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+
+  if (perp_compression) {
+    SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+  } else {
+    SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+  }
+  
   SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
   SPd_par_cond = FV::Div_par_K_Grad_par(kappa_n * heat_flux_factor, Tn);
   

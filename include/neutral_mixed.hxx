@@ -71,6 +71,7 @@ private:
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
+  bool perp_compression; ///< Include 5/3 factor in perp pressure advection?
 };
 
 namespace {
