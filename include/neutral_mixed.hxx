@@ -59,7 +59,7 @@ private:
   Field3D momentum_flux_factor;
   Field3D heat_flux_factor;
 
-  Field3D SPd_par_adv, SPd_par_compr, SPd_perp_adv, SPd_perp_cond, SPd_par_cond, SPd_src, SPd_ext_src, SPd_visc_heat; ///< Neutral pressure terms
+  Field3D SPd_par_adv, SPd_par_compr, SPd_perp_adv, SPd_perp_compr, SPd_perp_cond, SPd_par_cond, SPd_src, SPd_ext_src, SPd_visc_heat; ///< Neutral pressure terms
 
   bool neutral_viscosity; ///< include viscosity?
 
@@ -71,7 +71,7 @@ private:
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
-  bool perp_compression; ///< Include 5/3 factor in perp pressure advection?
+  bool perp_pressure_form; ///< Form of the perpendicular neutral pressure terms
 };
 
 namespace {

@@ -90,9 +90,12 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .doc("Optional maximum mean free path in [m] for diffusive processes. < 0 is off")
     .withDefault(0.1);
 
-  perp_compression = options["perp_compression"]
-    .doc("Include factor of 5/3 in perpendicular pressure advection?")
-    .withDefault<bool>(true);
+  perp_pressure_form = options["perp_pressure_form"]
+    .doc("Form of perpendicular pressure advection. " 
+    "1: default AFN "
+    "2. AFN with no 5/3 term on advectio "
+    "3. 5/3 term in advection, additional compression term ")
+    .withDefault(1);
 
   if (precondition) {
     inv = std::unique_ptr<Laplacian>(Laplacian::create(&options["precon_laplace"]));
@@ -473,10 +476,20 @@ void NeutralMixed::finally(const Options& state) {
   SPd_par_adv = -FV::Div_par_mod<hermes::Limiter>(Pn, Vn, sound_speed);
   SPd_par_compr = -(2. / 3) * Pn * Div_par(Vn);
 
-  if (perp_compression) {
+  ///// 1. Standard AFN
+  if (perp_pressure_form == 1) {
     SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
-  } else {
+    SPd_perp_compr = 0;
+
+  ///// 2. AFN with no 5/3 term on advection
+  } else if (perp_pressure_form == 2) {
     SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+    SPd_perp_compr = 0;
+
+  ///// 3. No 5/3 term on advection, additional compression term
+  } else if (perp_pressure_form == 3) {
+    SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+    SPd_perp_compr = (2. / 3) * Pn * FV::Div_a_Grad_perp(Dnn * particle_flux_factor, logPnlim);
   }
   
   SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
@@ -487,6 +500,7 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Pn) = SPd_par_adv // Advection
           + SPd_par_compr                       // Compression
           + SPd_perp_adv   // Perpendicular advection: q = 5/2 p u_perp
+          + SPd_perp_compr // Perpendicular compression: 0 by default
           + SPd_perp_cond      // Perpendicular conduction
           + SPd_par_cond  // Parallel conduction
     ;
