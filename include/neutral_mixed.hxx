@@ -71,7 +71,7 @@ private:
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
-  bool perp_pressure_form; ///< Form of the perpendicular neutral pressure terms
+  BoutReal perp_pressure_form; ///< Form of the perpendicular neutral pressure terms
 };
 
 namespace {
