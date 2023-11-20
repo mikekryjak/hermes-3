@@ -478,21 +478,22 @@ void NeutralMixed::finally(const Options& state) {
 
   ///// 1. Standard AFN
   if (perp_pressure_form == 1) {
-    SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+    SPd_perp_adv = -FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
     SPd_perp_compr = 0;
 
   ///// 2. AFN with no 5/3 term on advection
   } else if (perp_pressure_form == 2) {
-    SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+    SPd_perp_adv = -FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
     SPd_perp_compr = 0;
 
   ///// 3. No 5/3 term on advection, additional compression term
   } else if (perp_pressure_form == 3) {
-    SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
-    SPd_perp_compr = (2. / 3) * Pn * FV::Div_a_Grad_perp(Dnn * particle_flux_factor, logPnlim);
+    SPd_perp_adv = -FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+    SPd_perp_compr = -(2. / 3) * Pn * FV::Div_a_Grad_perp(Dnn * particle_flux_factor, logPnlim);
   
+  ///// 4. Standard AFN with 5/3 with additional compression term
   } else if (perp_pressure_form == 4) {
-    SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+    SPd_perp_adv = -FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
     SPd_perp_compr = (2. / 3) * DnnPn * particle_flux_factor * Grad_perp(logPnlim) * Grad_perp(Pnlim);
   }
 
