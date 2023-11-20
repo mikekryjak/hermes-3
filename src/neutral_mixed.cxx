@@ -748,6 +748,14 @@ void NeutralMixed::outputVars(Options& state) {
                       {"long_name", name + " perpendicular advection"},
                       {"source", "neutral_mixed"}});
 
+      set_with_attrs(state[std::string("SP") + name + std::string("_perp_compr")], SPd_perp_compr,
+                    {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", SI::qe * Tnorm * Nnorm * Omega_ci},
+                      {"standard_name", "perpendicular compression"},
+                      {"long_name", name + " perpendicular compression"},
+                      {"source", "neutral_mixed"}});
+
       set_with_attrs(state[std::string("SP") + name + std::string("_perp_cond")], SPd_perp_cond,
                     {{"time_dimension", "t"},
                       {"units", "Pa s^-1"},
