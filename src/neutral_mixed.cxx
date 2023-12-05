@@ -97,6 +97,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     "3. 5/3 term in advection, additional compression term ")
     .withDefault(1);
 
+  evolve_momentum = options["evolve_momentum"]
+    .doc("Evolve parallel neutral momentum?")
+    .withDefault<bool>(true);
+
   if (precondition) {
     inv = std::unique_ptr<Laplacian>(Laplacian::create(&options["precon_laplace"]));
 
@@ -457,16 +461,20 @@ void NeutralMixed::finally(const Options& state) {
   // Neutral momentum
   TRACE("Neutral momentum");
 
-  // Perpendicular advection scaled by particle flux limit
-  ddt(NVn) =
-    -AA * FV::Div_par_fvv<hermes::Limiter>(Nnlim, Vn, sound_speed) // Momentum flow
-    - Grad_par(Pn)                                                 // Pressure gradient.
-    + FV::Div_a_Grad_perp(DnnNVn * particle_flux_factor, logPnlim) // Perpendicular diffusion
-    ;
+  if (evolve_momentum) {
+    // Perpendicular advection scaled by particle flux limit
+    ddt(NVn) =
+      -AA * FV::Div_par_fvv<hermes::Limiter>(Nnlim, Vn, sound_speed) // Momentum flow
+      - Grad_par(Pn)                                                 // Pressure gradient.
+      + FV::Div_a_Grad_perp(DnnNVn * particle_flux_factor, logPnlim) // Perpendicular diffusion
+      ;
 
-  if (localstate.isSet("momentum_source")) {
-    Snv = get<Field3D>(localstate["momentum_source"]);
-    ddt(NVn) += Snv;
+    if (localstate.isSet("momentum_source")) {
+      Snv = get<Field3D>(localstate["momentum_source"]);
+      ddt(NVn) += Snv;
+    }
+  } else {
+    output_warn.write("WARNING: Not evolving neutral parallel momentum. NVn and Vn set to 0");
   }
 
   /////////////////////////////////////////////////////
@@ -525,7 +533,7 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Pn) += Sp;
 
   SPd_visc_heat = 0;
-  if (neutral_viscosity) {
+  if ((neutral_viscosity) and (evolve_momentum)) {
     // Scaled by momentum flux factor
     Field3D momentum_source = FV::Div_a_Grad_perp(eta_n * momentum_flux_factor, Vn)    // Perpendicular viscosity
               + FV::Div_par_K_Grad_par(eta_n * momentum_flux_factor, Vn) // Parallel viscosity
@@ -787,7 +795,7 @@ void NeutralMixed::outputVars(Options& state) {
                       {"standard_name", "user set source"},
                       {"long_name", name + " user set source"},
                       {"source", "neutral_mixed"}});
-
+      if (evolve_momentum) {
       set_with_attrs(state[std::string("SP") + name + std::string("_visc_heat")], SPd_visc_heat,
                     {{"time_dimension", "t"},
                       {"units", "Pa s^-1"},
@@ -795,6 +803,7 @@ void NeutralMixed::outputVars(Options& state) {
                       {"standard_name", "viscous heating"},
                       {"long_name", name + " viscous heating"},
                       {"source", "neutral_mixed"}});
+      }
     }
   }
 }
