@@ -72,7 +72,6 @@ private:
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
-  bool evolve_momentum; ///< Evolve parallel momentum?
   BoutReal perp_pressure_form; ///< Form of the perpendicular neutral pressure terms
 };
 
