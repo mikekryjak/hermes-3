@@ -105,8 +105,15 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   perp_pressure_form = options["perp_pressure_form"]
     .doc("Form of perpendicular pressure advection. " 
     "1: default AFN "
-    "2. AFN with no 5/3 term on advectio "
-    "3. 5/3 term in advection, additional compression term ")
+    "2. Original Hermes-3 (no 5/3 factor) "
+    "3. 5/3 term in advection, additional compression term "
+    "4. No 5/3 factor, additional compression term ")
+    .withDefault(1);
+
+  perp_cond_form = options["perp_cond_form"]
+    .doc("Form of perpendicular conduction. " 
+    "1: default AFN "
+    "2. Original Hermes-3 (no 2/3 factor)")
     .withDefault(1);
 
   evolve_momentum = options["evolve_momentum"]
@@ -517,13 +524,14 @@ void NeutralMixed::finally(const Options& state) {
 
   SPd_perp_adv = 0;
   SPd_perp_compr = 0;
+  SPd_perp_cond = 0;
 
   ///// 1. Standard AFN
   if (perp_pressure_form == 1) {
     SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
     SPd_perp_compr = 0;
 
-  ///// 2. AFN with no 5/3 term on advection
+  ///// 2. Original Hermes-3 form
   } else if (perp_pressure_form == 2) {
     SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
     SPd_perp_compr = 0;
@@ -539,9 +547,15 @@ void NeutralMixed::finally(const Options& state) {
     SPd_perp_compr = (2. / 3) * DnnPn * particle_flux_factor * Grad_perp(logPnlim) * Grad_perp(Pnlim);
   }
 
+  ///// 1. Standard AFN form
+  if (perp_cond_form == 1) {  
+    SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
 
-  
-  SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+  ///// 2. Original Hermes-3 form 
+  } else if (perp_cond_form == 2) {
+    SPd_perp_cond =            FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+  }
+
   SPd_par_cond = FV::Div_par_K_Grad_par(kappa_n * heat_flux_factor, Tn);
   
   // Perpendicular advection scaled by particle_flux_factor
