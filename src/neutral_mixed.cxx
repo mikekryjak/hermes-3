@@ -116,6 +116,18 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     "2. Original Hermes-3 (no 2/3 factor)")
     .withDefault(1);
 
+  kappa_form = options["kappa_form"]
+    .doc("Form of perpendicular conduction. " 
+    "1: default AFN "
+    "2. Original Hermes-3 (no 5/2 factor)")
+    .withDefault(1);
+
+  eta_form = options["eta_form"]
+    .doc("Form of perpendicular conduction. " 
+    "1: default AFN "
+    "2. Original Hermes-3 (no 2/5 factor)")
+    .withDefault(1);
+
   evolve_momentum = options["evolve_momentum"]
     .doc("Evolve parallel neutral momentum?")
     .withDefault<bool>(true);
@@ -363,10 +375,26 @@ void NeutralMixed::finally(const Options& state) {
   // Heat conductivity
   // Note: This is kappa_n = (5/2) * Pn / (m * nu)
   //       where nu is the collision frequency used in Dnn
-  kappa_n = (5. / 2) * DnnNn;
+
+  ///// 1. Standard AFN form
+  if (kappa_form == 1) {
+    kappa_n = (5. / 2) * DnnNn;
+
+  ///// 2. Original Hermes-3 form
+  } else if (kappa_form == 2) {
+    kappa_n =            DnnNn;
+  };
 
   // Viscosity
-  eta_n = AA * (2. / 5) * kappa_n;
+
+  ///// 1. Standard AFN form
+  if (eta_form == 1) {
+    eta_n = AA * (2. / 5) * kappa_n;
+
+  ///// 2. Original Hermes-3 form
+  } else if (eta_form == 2) {
+    eta_n = AA            * kappa_n;
+  }
 
   // Sound speed appearing in Lax flux for advection terms
   Field3D sound_speed = sqrt(Tn * (5. / 3) / AA);
