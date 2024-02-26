@@ -73,6 +73,7 @@ private:
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
   BoutReal perp_pressure_form, perp_cond_form, kappa_form, eta_form; ///< Form of the perpendicular neutral pressure terms
+  bool upwind_perp_diffusion; ///< Use a more dissipative perpendicular diffusion operator?
 };
 
 namespace {

@@ -132,6 +132,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .doc("Evolve parallel neutral momentum?")
     .withDefault<bool>(true);
 
+  upwind_perp_diffusion = options["evolve_momupwind_perp_diffusionentum"]
+    .doc("Evolve parallel neutral momentum?")
+    .withDefault<bool>(false);
+
   if (precondition) {
     inv = std::unique_ptr<Laplacian>(Laplacian::create(&options["precon_laplace"]));
 
@@ -494,9 +498,13 @@ void NeutralMixed::finally(const Options& state) {
   TRACE("Neutral density");
 
   // Note: Only perpendicular flux scaled by limiter
-  ddt(Nn) = -FV::Div_par_mod<hermes::Limiter>(Nn, Vn, sound_speed) // Advection
-    + FV::Div_a_Grad_perp(DnnNn * particle_flux_factor, logPnlim) // Perpendicular diffusion
-    ;
+  ddt(Nn) = -FV::Div_par_mod<hermes::Limiter>(Nn, Vn, sound_speed); // Advection
+
+  if (upwind_perp_diffusion) {                                       // Perpendicular diffusion
+    ddt(Nn) += Div_a_Grad_perp_upwind(DnnNn * particle_flux_factor, logPnlim);
+  } else {
+    ddt(Nn) += FV::Div_a_Grad_perp(DnnNn * particle_flux_factor, logPnlim);
+  };
 
   Sn = density_source; // Save for possible output
   if (localstate.isSet("density_source")) {
@@ -513,8 +521,13 @@ void NeutralMixed::finally(const Options& state) {
     ddt(NVn) =
         -AA * FV::Div_par_fvv<hermes::Limiter>(Nnlim, Vn, sound_speed) // Momentum flow
         - Grad_par(Pn)                                                 // Pressure gradient
-        + FV::Div_a_Grad_perp(DnnNVn * particle_flux_factor, logPnlim) // Perpendicular diffusion
         ;
+
+    if (upwind_perp_diffusion) {                                       // Perpendicular diffusion
+      ddt(NVn) += Div_a_Grad_perp_upwind(DnnNVn * particle_flux_factor, logPnlim);
+    } else {
+      ddt(NVn) += FV::Div_a_Grad_perp(DnnNVn * particle_flux_factor, logPnlim);
+    };
 
     if (neutral_viscosity) {
       // NOTE: The following viscosity terms are are not (yet) balanced
@@ -530,6 +543,13 @@ void NeutralMixed::finally(const Options& state) {
       ddt(NVn) += AA * FV::Div_a_Grad_perp((2. / 5) * DnnNn, Vn)    // Perpendicular viscosity
                 + AA * FV::Div_par_K_Grad_par((2. / 5) * DnnNn, Vn) // Parallel viscosity
         ;
+
+      if (upwind_perp_diffusion) {                                       // Perpendicular viscosity
+        ddt(NVn) += AA * Div_a_Grad_perp_upwind((2. / 5) * DnnNn, Vn);
+      } else {
+        ddt(NVn) += AA * FV::Div_a_Grad_perp((2. / 5) * DnnNn, Vn);
+      };
+
     }
 
     if (localstate.isSet("momentum_source")) {
@@ -556,32 +576,70 @@ void NeutralMixed::finally(const Options& state) {
 
   ///// 1. Standard AFN
   if (perp_pressure_form == 1) {
-    SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+
+    if (upwind_perp_diffusion) {
+        SPd_perp_adv = Div_a_Grad_perp_upwind((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+      } else {
+        SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+      };
     SPd_perp_compr = 0;
 
   ///// 2. Original Hermes-3 form
   } else if (perp_pressure_form == 2) {
-    SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+
+    if (upwind_perp_diffusion) {
+        SPd_perp_adv = Div_a_Grad_perp_upwind(           DnnPn * particle_flux_factor, logPnlim);
+      } else {
+        SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+      };
+
     SPd_perp_compr = 0;
 
   ///// 3. No 5/3 term on advection, additional compression term
   } else if (perp_pressure_form == 3) {
-    SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
-    SPd_perp_compr = -(2. / 3) * Pn * FV::Div_a_Grad_perp(Dnn * particle_flux_factor, logPnlim);
+    
+    if (upwind_perp_diffusion) {
+        SPd_perp_adv = Div_a_Grad_perp_upwind(           DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_compr = -(2. / 3) * Pn * Div_a_Grad_perp_upwind(Dnn * particle_flux_factor, logPnlim);
+      } else {
+        SPd_perp_adv = FV::Div_a_Grad_perp(           DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_compr = -(2. / 3) * Pn * FV::Div_a_Grad_perp(Dnn * particle_flux_factor, logPnlim);
+      };
+
+    
   
   ///// 4. Standard AFN with 5/3 with additional compression term
   } else if (perp_pressure_form == 4) {
-    SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
-    SPd_perp_compr = (2. / 3) * DnnPn * particle_flux_factor * Grad_perp(logPnlim) * Grad_perp(Pnlim);
+
+    if (upwind_perp_diffusion) {
+        SPd_perp_adv = Div_a_Grad_perp_upwind((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_compr = (2. / 3) * DnnPn * particle_flux_factor * Grad_perp(logPnlim) * Grad_perp(Pnlim);
+      } else {
+        SPd_perp_adv = FV::Div_a_Grad_perp((5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_compr = (2. / 3) * DnnPn * particle_flux_factor * Grad_perp(logPnlim) * Grad_perp(Pnlim);
+      };
+
   }
 
   ///// 1. Standard AFN form
   if (perp_cond_form == 1) {  
-    SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+    
+    if (upwind_perp_diffusion) {
+        SPd_perp_cond = (2. / 3) * Div_a_Grad_perp_upwind(kappa_n * heat_flux_factor, Tn);
+      } else {
+        SPd_perp_cond = (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+      };
 
   ///// 2. Original Hermes-3 form 
   } else if (perp_cond_form == 2) {
-    SPd_perp_cond =            FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+    
+
+    if (upwind_perp_diffusion) {
+        SPd_perp_cond =                Div_a_Grad_perp_upwind(kappa_n * heat_flux_factor, Tn);
+      } else {
+        SPd_perp_cond =            FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+      };
+
   }
 
   SPd_par_cond = FV::Div_par_K_Grad_par(kappa_n * heat_flux_factor, Tn);
