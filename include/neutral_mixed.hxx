@@ -42,7 +42,7 @@ private:
   BoutReal AA; ///< Atomic mass (proton = 1)
 
   Field3D Dnn; ///< Diffusion coefficient
-  Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
+  Field3D DnnNn; ///< Used for operators
   Field3D eta_n; ///< Viscosity
   Field3D kappa_n; ///< Thermal conductivity
 
@@ -62,6 +62,7 @@ private:
   Field3D SPd_par_adv, SPd_par_compr, SPd_perp_adv, SPd_perp_compr, SPd_perp_cond, SPd_par_cond, SPd_src, SPd_ext_src, SPd_visc_heat; ///< Neutral pressure terms
 
   bool neutral_viscosity; ///< include viscosity?
+  bool neutral_conduction; ///< Include heat conduction?
   bool evolve_momentum; ///< Evolve parallel momentum?
 
   bool precondition {true}; ///< Enable preconditioner?
