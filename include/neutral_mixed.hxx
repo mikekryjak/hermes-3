@@ -42,7 +42,7 @@ private:
   BoutReal AA; ///< Atomic mass (proton = 1)
 
   Field3D Dnn; ///< Diffusion coefficient
-  Field3D DnnNn; ///< Used for operators
+  Field3D DnnNn, DnnPn, DnnNVn; ///< Used for operators
   Field3D eta_n; ///< Viscosity
   Field3D kappa_n; ///< Thermal conductivity
 
@@ -51,6 +51,7 @@ private:
   BoutReal nn_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.
 
   bool flux_limit; ///< Impose flux limiter?
+  BoutReal diffusion_limit;   ///< Limit on Dnn
   bool particle_flux_limiter, heat_flux_limiter, momentum_flux_limiter; ///< Which limiters to impose
   BoutReal maximum_mfp; ///< Maximum mean free path for diffusion. 0.1 by default, -1 is off.
   BoutReal flux_limit_alpha, heat_flux_limit_alpha, mom_flux_limit_alpha;

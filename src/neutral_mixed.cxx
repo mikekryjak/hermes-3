@@ -694,7 +694,7 @@ void NeutralMixed::finally(const Options& state) {
 
   if (neutral_conduction) {
   ddt(Pn) += SPd_perp_cond      // Perpendicular conduction
-      + SPd_par_cond  // Parallel conduction
+      + SPd_par_cond;  // Parallel conduction
   }
 
   if (neutral_conduction) {
