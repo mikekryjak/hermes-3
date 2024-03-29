@@ -220,6 +220,9 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   // Product of Dnn and another parameter has same BC as Dnn - see eqns to see why this is
   // necessary
   DnnNn.setBoundary(std::string("Dnn") + name);
+  DnnPn.setBoundary(std::string("Dnn") + name);
+  DnnTn.setBoundary(std::string("Dnn") + name);
+  DnnNVn.setBoundary(std::string("Dnn") + name);
 }
 
 void NeutralMixed::transform(Options& state) {
@@ -371,14 +374,20 @@ void NeutralMixed::finally(const Options& state) {
   Dnn.applyBoundary();
 
   // Neutral diffusion parameters have the same boundary condition as Dnn
+  DnnPn = Dnn * Pn;
+  DnnPn.applyBoundary();
   DnnNn = Dnn * Nn;
   DnnNn.applyBoundary();
+  Field3D DnnNVn = Dnn * NVn;
+  DnnNVn.applyBoundary();
 
   if (sheath_ydown) {
     for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
         Dnn(r.ind, mesh->ystart - 1, jz) = -Dnn(r.ind, mesh->ystart, jz);
+        DnnPn(r.ind, mesh->ystart - 1, jz) = -DnnPn(r.ind, mesh->ystart, jz);
         DnnNn(r.ind, mesh->ystart - 1, jz) = -DnnNn(r.ind, mesh->ystart, jz);
+        DnnNVn(r.ind, mesh->ystart - 1, jz) = -DnnNVn(r.ind, mesh->ystart, jz);
       }
     }
   }
@@ -387,33 +396,11 @@ void NeutralMixed::finally(const Options& state) {
     for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
         Dnn(r.ind, mesh->yend + 1, jz) = -Dnn(r.ind, mesh->yend, jz);
+        DnnPn(r.ind, mesh->yend + 1, jz) = -DnnPn(r.ind, mesh->yend, jz);
         DnnNn(r.ind, mesh->yend + 1, jz) = -DnnNn(r.ind, mesh->yend, jz);
+        DnnNVn(r.ind, mesh->yend + 1, jz) = -DnnNVn(r.ind, mesh->yend, jz);
       }
     }
-  }
-
-  // Heat conductivity
-  // Note: This is kappa_n = (5/2) * Pn / (m * nu)
-  //       where nu is the collision frequency used in Dnn
-
-  ///// 1. Standard AFN form
-  if (kappa_form == 1) {
-    kappa_n = (5. / 2) * DnnNn;
-
-  ///// 2. Original Hermes-3 form
-  } else if (kappa_form == 2) {
-    kappa_n =            DnnNn;
-  };
-
-  // Viscosity
-
-  ///// 1. Standard AFN form
-  if (eta_form == 1) {
-    eta_n = AA * (2. / 5) * kappa_n;
-
-  ///// 2. Original Hermes-3 form
-  } else if (eta_form == 2) {
-    eta_n = AA            * kappa_n;
   }
 
   // Heat conductivity
