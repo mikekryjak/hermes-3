@@ -42,7 +42,7 @@ private:
   BoutReal AA; ///< Atomic mass (proton = 1)
 
   Field3D Dnn; ///< Diffusion coefficient
-  Field3D DnnNn, DnnPn, DnnNVn; ///< Used for operators
+  Field3D DnnNn, DnnPn, DnnNVn, DnnTn; ///< Used for operators
   Field3D eta_n; ///< Viscosity
   Field3D kappa_n; ///< Thermal conductivity
 
