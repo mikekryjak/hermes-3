@@ -683,12 +683,6 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Pn) += SPd_perp_cond      // Perpendicular conduction
       + SPd_par_cond;  // Parallel conduction
   }
-
-  if (neutral_conduction) {
-    ddt(Pn) += FV::Div_a_Grad_perp(DnnNn, Tn)    // Perpendicular conduction
-      + FV::Div_par_K_Grad_par(DnnNn, Tn)        // Parallel conduction
-      ;
-  }
   
   Sp = pressure_source;
   SPd_src = (2. / 3) * get<Field3D>(localstate["energy_source"]);     // Sources set by collisions and reactions
