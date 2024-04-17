@@ -56,7 +56,12 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   nn_floor = options["nn_floor"]
                  .doc("A minimum density used when dividing NVn by Nn. "
                       "Normalised units.")
-                 .withDefault(1e-5);
+                 .withDefault(1e-8);
+
+  pn_floor = options["pn_floor"]
+                 .doc("A minimum pressure used when dividing Pn by Nn. "
+                      "Normalised units.")
+                 .withDefault(1e-8);
 
   precondition = options["precondition"]
                      .doc("Enable preconditioning in neutral model?")
@@ -93,6 +98,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   flux_limit_gamma = options["flux_limit_gamma"]
     .doc("Higher values increase sharpness of flux limiting")
     .withDefault(2.0);
+
+  legacy_limiter_vth = options["legacy_limiter_vth"]
+    .doc("Use old (incorrect) formulation for v_th in the neutral flux limiter")
+    .withDefault<bool>(false);
 
   neutral_viscosity = options["neutral_viscosity"]
     .doc("Include neutral gas viscosity?")
@@ -132,8 +141,8 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .doc("Evolve parallel neutral momentum?")
     .withDefault<bool>(true);
 
-  upwind_perp_diffusion = options["evolve_momupwind_perp_diffusionentum"]
-    .doc("Evolve parallel neutral momentum?")
+  upwind_perp_diffusion = options["upwind_perp_diffusion"]
+    .doc("Use upwinding for neutral perpendicular advection?")
     .withDefault<bool>(false);
 
   if (precondition) {
@@ -228,7 +237,7 @@ void NeutralMixed::transform(Options& state) {
   Vn.applyBoundary("neumann");
   Vnlim.applyBoundary("neumann");
 
-  Pnlim = floor(Nnlim * Tn, 1e-8);
+  Pnlim = floor(Nnlim * Tn, pn_floor);
   Pnlim.applyBoundary();
 
   Tnlim = Pnlim / Nnlim;
@@ -677,10 +686,10 @@ void NeutralMixed::finally(const Options& state) {
   }
 
   BOUT_FOR(i, Pn.getRegion("RGN_ALL")) {
-    if ((Pn[i] < 1e-9) && (ddt(Pn)[i] < 0.0)) {
+    if ((Pn[i] < pn_floor * 1e-2) && (ddt(Pn)[i] < 0.0)) {
       ddt(Pn)[i] = 0.0;
     }
-    if ((Nn[i] < 1e-7) && (ddt(Nn)[i] < 0.0)) {
+    if ((Nn[i] < nn_floor * 1e-2) && (ddt(Nn)[i] < 0.0)) {
       ddt(Nn)[i] = 0.0;
     }
   }

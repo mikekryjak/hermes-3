@@ -36,6 +36,7 @@ private:
   
   Field3D Nn, Pn, NVn; // Density, pressure and parallel momentum
   Field3D Vn; ///< Neutral parallel velocity
+  Field3D Vth; ///< Thermal velocity of Maxwellian in one direction
   Field3D Tn; ///< Neutral temperature
   Field3D Nnlim, Pnlim, logPnlim, Vnlim, Tnlim; // Limited in regions of low density
 
@@ -49,6 +50,7 @@ private:
   bool sheath_ydown, sheath_yup;
 
   BoutReal nn_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.
+  BoutReal pn_floor; ///< Minimum Pn used when dividing Pn by Nn to get Tn.
 
   bool flux_limit; ///< Impose flux limiter?
   bool particle_flux_limiter, heat_flux_limiter, momentum_flux_limiter; ///< Which limiters to impose
