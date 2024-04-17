@@ -49,6 +49,7 @@ private:
   bool sheath_ydown, sheath_yup;
 
   BoutReal nn_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.
+  BoutReal pn_floor; ///< Minimum Pn used when dividing Pn by Nn to get Tn.
 
   bool flux_limit; ///< Impose flux limiter?
   BoutReal diffusion_limit;   ///< Limit on Dnn
@@ -67,15 +68,25 @@ private:
   bool evolve_momentum; ///< Evolve parallel momentum?
 
   bool precondition {true}; ///< Enable preconditioner?
+  bool lax_flux; ///< Use Lax flux for advection terms
   std::unique_ptr<Laplacian> inv; ///< Laplacian inversion used for preconditioning
 
   Field3D density_source, pressure_source; ///< External input source
   Field3D Sn, Sp, Snv; ///< Particle, pressure and momentum source
+  Field3D sound_speed; ///< Sound speed for use with Lax flux
+
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
+  bool dnnnnfix, dnnpnfix;  ///< Ensure DnnNn and DnnPn use Nnlim and Pnlim
   BoutReal perp_pressure_form, perp_cond_form, kappa_form, eta_form; ///< Form of the perpendicular neutral pressure terms
+  BoutReal perp_operator; ///< Choice of perp advection operator
   bool upwind_perp_diffusion; ///< Use a more dissipative perpendicular diffusion operator?
+
+  // Flow diagnostics
+  Field3D particle_flow_xlow, particle_flow_ylow;
+  Field3D momentum_flow_xlow, momentum_flow_ylow;
+  Field3D energy_flow_xlow, energy_flow_ylow;
 };
 
 namespace {
