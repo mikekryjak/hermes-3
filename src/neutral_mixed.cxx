@@ -174,8 +174,8 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .withDefault<bool>(false);
   
   perp_operator = options["perp_operator"]
-    .doc("Choice of operator for perp transport. Either 0, 1 or 3")
-    .withDefault<BoutReal>(0);
+    .doc("Choice of operator for perp transport. Either 0, 1 or 2")
+    .withDefault<BoutReal>(2);
 
   if (precondition) {
     inv = std::unique_ptr<Laplacian>(Laplacian::create(&options["precon_laplace"]));
@@ -564,6 +564,10 @@ void NeutralMixed::finally(const Options& state) {
   /////////////////////////////////////////////////////
   // Neutral density
   TRACE("Neutral density");
+
+  if (perp_operator != 2) {
+    throw BoutException("Neutral operator choices of 0 and 1 cause a seg fault - not fixed yet");
+  }
 
   // Note: Only perpendicular flux scaled by limiter
   ddt(Nn) = -FV::Div_par_mod<ParLimiter>(Nn, Vn, sound_speed); // Parallel advection
