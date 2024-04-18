@@ -61,7 +61,12 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   nn_floor = options["nn_floor"]
                  .doc("A minimum density used when dividing NVn by Nn. "
                       "Normalised units.")
-                 .withDefault(1e-5);
+                 .withDefault(1e-8);
+
+  pn_floor = options["pn_floor"]
+                 .doc("A minimum pressure used when dividing Pn by Nn. "
+                      "Normalised units.")
+                 .withDefault(1e-8);
 
   pn_floor = options["pn_floor"]
                  .doc("A minimum pressure used when dividing Pn by Nn. "
@@ -121,6 +126,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
                         .withDefault(-1.0)
                     / (meters * meters / seconds); // Normalise
+
+  legacy_limiter_vth = options["legacy_limiter_vth"]
+    .doc("Use old (incorrect) formulation for v_th in the neutral flux limiter")
+    .withDefault<bool>(true);
 
   neutral_viscosity = options["neutral_viscosity"]
                           .doc("Include neutral gas viscosity?")
@@ -270,7 +279,7 @@ void NeutralMixed::transform(Options& state) {
   Vn.applyBoundary("neumann");
   Vnlim.applyBoundary("neumann");
 
-  Pnlim = floor(Pn, pn_floor);
+  Pnlim = floor(Nnlim * Tn, pn_floor);
   Pnlim.applyBoundary();
 
   Tnlim = Pnlim / Nnlim;
