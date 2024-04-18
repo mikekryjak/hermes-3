@@ -127,10 +127,6 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                         .withDefault(-1.0)
                     / (meters * meters / seconds); // Normalise
 
-  legacy_limiter_vth = options["legacy_limiter_vth"]
-    .doc("Use old (incorrect) formulation for v_th in the neutral flux limiter")
-    .withDefault<bool>(true);
-
   neutral_viscosity = options["neutral_viscosity"]
                           .doc("Include neutral gas viscosity?")
                           .withDefault<bool>(true);
