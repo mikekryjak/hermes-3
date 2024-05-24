@@ -495,7 +495,7 @@ void NeutralMixed::finally(const Options& state) {
       // Note: The perpendicular advection of momentum is scaled by the particle flux factor.
       //       The perpendicular diffusion of momentum (viscosity) is scaled by the momentum flux factor.
       //       Parallel transport is not touched.
-      Vector3D momentum_flux = -eta_n * Grad(Vn);
+      Vector3D momentum_flux = -eta_n * Grad_perp(Vn);
       Field3D momentum_flux_abs = sqrt(momentum_flux * momentum_flux);
       Field3D momentum_limit = Pnlim;
 
@@ -512,7 +512,7 @@ void NeutralMixed::finally(const Options& state) {
       //  - Convection limited by particle flux limiter
       //  - Conduction limited by heat flux limiter
       //  - Heat flux limiter calculated only from conduction transport
-      Vector3D heat_flux = - kappa_n * Grad(Tn);
+      Vector3D heat_flux = - kappa_n * Grad_perp(Tn);
         
 
       Field3D heat_flux_abs = sqrt(heat_flux * heat_flux);
