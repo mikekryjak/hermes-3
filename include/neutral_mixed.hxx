@@ -78,7 +78,6 @@ private:
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
-  bool dnnnnfix, dnnpnfix;  ///< Ensure DnnNn and DnnPn use Nnlim and Pnlim
   BoutReal perp_pressure_form, perp_cond_form, kappa_form, eta_form; ///< Form of the perpendicular neutral pressure terms
   BoutReal perp_operator; ///< Choice of perp advection operator
   bool upwind_perp_diffusion; ///< Use a more dissipative perpendicular diffusion operator?

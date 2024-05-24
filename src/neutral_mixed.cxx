@@ -61,12 +61,9 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   nn_floor = options["nn_floor"]
                  .doc("A minimum density used when dividing NVn by Nn. "
                       "Normalised units.")
-                 .withDefault(1e-5);
-
-  pn_floor = options["pn_floor"]
-                 .doc("A minimum pressure used when dividing Pn by Nn. "
-                      "Normalised units.")
                  .withDefault(1e-8);
+
+  pn_floor = nn_floor * (1./get<BoutReal>(alloptions["units"]["eV"]));
 
   precondition = options["precondition"]
                      .doc("Enable preconditioning in neutral model?")
@@ -107,15 +104,6 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   lax_flux = options["lax_flux"]
                      .doc("Enable stabilising lax flux?")
                      .withDefault<bool>(true);
-
-  dnnpnfix = options["dnnpnfix"]
-               .doc("Use DnnPn with Pnlim")
-               .withDefault<bool>(false);
-
-  dnnnnfix = options["dnnnnfix"]
-               .doc("Use DnnNn with Nnlim")
-               .withDefault<bool>(false);
-
 
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
@@ -396,22 +384,12 @@ void NeutralMixed::finally(const Options& state) {
   Dnn.applyBoundary();
 
   // Neutral diffusion parameters have the same boundary condition as Dnn
-  if (dnnnnfix) {
-    DnnNn = Dnn * Nnlim;
-  } else {
-    DnnNn = Dnn * Nn;
-  }
-
-  if (dnnpnfix) {
-    DnnPn = Dnn * Pnlim;
-  } else {
-    DnnPn = Dnn * Pn;
-  }
+  DnnNn = Dnn * Nnlim;
+  DnnPn = Dnn * Pnlim;
+  DnnNVn = Dnn * NVn;
 
   DnnPn.applyBoundary();
-  
   DnnNn.applyBoundary();
-  DnnNVn = Dnn * NVn;
   DnnNVn.applyBoundary();
 
   if (sheath_ydown) {
