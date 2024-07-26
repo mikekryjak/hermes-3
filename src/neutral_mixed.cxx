@@ -164,7 +164,7 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                           .withDefault<bool>(false);
   perp_upwind = options["perp_upwind"]
                           .doc("Use upwind operator for perp advection?")
-                          .withDefault<bool>(false);
+                          .withDefault<bool>(true);
 
   diffusion_collisions_mode = options["diffusion_collisions_mode"]
       .doc("Can be legacy: all enabled collisions excl. IZ, or afn: CX, IZ and NN collisions")
