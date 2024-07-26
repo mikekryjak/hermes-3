@@ -681,6 +681,16 @@ void NeutralMixed::finally(const Options& state) {
     sound_speed = sqrt(Tn * (5. / 3) / AA);
   }
 
+  // Initialise flow diagnostics
+  particle_flow_xlow = 0; 
+  particle_flow_ylow = 0;
+  momentum_flow_xlow = 0; 
+  momentum_flow_ylow = 0;
+  energy_flow_xlow = 0; 
+  energy_flow_ylow = 0;
+  conduction_flow_xlow = 0; 
+  conduction_flow_ylow = 0;
+
 
 
   /////////////////////////////////////////////////////
@@ -714,24 +724,26 @@ void NeutralMixed::finally(const Options& state) {
   // Neutral pressure
   TRACE("Neutral pressure");
 
-  // ddt(Pn) = 
-  //   - FV::Div_par_mod<ParLimiter>(Pn, Vn, sound_speed)                  // Parallel advection
-  //   - (2. / 3) * Pn * Div_par(Vn);                                      // Parallel compression
+  ddt(Pn) = 
+    - FV::Div_par_mod<ParLimiter>(Pn, Vn, sound_speed)                  // Parallel advection
+    - (2. / 3) * Pn * Div_par(Vn);                                      // Parallel compression
 
-  // if (perp_upwind) {                                                    // Perpendicular advection
-  //   ddt(Pn) += Div_a_Grad_perp_upwind_flows(
-  //                 (5. / 3) * DnnPn * advection_factor, logPnlim,
-  //                 energy_flow_xlow, energy_flow_ylow);
+  if (perp_upwind) {                                                    // Perpendicular advection
+    ddt(Pn) += Div_a_Grad_perp_upwind_flows(
+                  (5. / 3) * DnnPn * advection_factor, logPnlim,
+                  energy_flow_xlow, energy_flow_ylow);
 
-  // } else {
-  //   ddt(Pn) += FV::Div_a_Grad_perp(                    
-  //                 (5. / 3) * DnnPn * advection_factor, logPnlim);
-  // }
+    // The factor here is likely 5/2 as we're advecting internal energy and pressure.
+    // Doing this still leaves a heat imbalance factor of 0.11 in the cells, but better than 0.33 with 3/2.
+    energy_flow_xlow *= 5/2; 
+    energy_flow_ylow *= 5/2;
 
-  // The factor here is likely 5/2 as we're advecting internal energy and pressure.
-  // Doing this still leaves a heat imbalance factor of 0.11 in the cells, but better than 0.33 with 3/2.
-  energy_flow_xlow *= 5/2; 
-  energy_flow_ylow *= 5/2;
+  } else {
+    ddt(Pn) += FV::Div_a_Grad_perp(                    
+                  (5. / 3) * DnnPn * advection_factor, logPnlim);
+  }
+
+  
 
   gradperpT = sqrt(Grad_perp(Tn) * Grad_perp(Tn));
 
