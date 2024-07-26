@@ -162,6 +162,9 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   constant_conduction = options["constant_conduction"]
                           .doc("Freeze conductivity after first RHS evaluation?")
                           .withDefault<bool>(false);
+  perp_upwind = options["perp_upwind"]
+                          .doc("Use upwind operator for perp advection?")
+                          .withDefault<bool>(false);
 
   diffusion_collisions_mode = options["diffusion_collisions_mode"]
       .doc("Can be legacy: all enabled collisions excl. IZ, or afn: CX, IZ and NN collisions")
@@ -684,11 +687,17 @@ void NeutralMixed::finally(const Options& state) {
   // Neutral density
   TRACE("Neutral density");
 
-  perp_nn_adv_src = Div_a_Grad_perp_upwind_flows(DnnNn * advection_factor, logPnlim,       // Perpendicular advection
-                                   particle_flow_xlow,
-                                   particle_flow_ylow);                 
+  perp_nn_adv_src = 0;
 
-  par_nn_adv_src = FV::Div_par_mod<ParLimiter>(Nn, Vn, sound_speed);    // Parallel advection
+  if (perp_upwind) {
+    perp_nn_adv_src = Div_a_Grad_perp_upwind_flows(DnnNn * advection_factor, logPnlim,       // Perpendicular advection
+                                    particle_flow_xlow,
+                                    particle_flow_ylow);                 
+  } else {
+    perp_nn_adv_src = FV::Div_a_Grad_perp(DnnNn * advection_factor, logPnlim);
+  }
+
+  par_nn_adv_src = FV::Div_par_mod<ParLimiter>(Nn, Vn, sound_speed);                         // Parallel advection
 
   ddt(Nn) =
     - par_nn_adv_src
@@ -705,13 +714,20 @@ void NeutralMixed::finally(const Options& state) {
   // Neutral pressure
   TRACE("Neutral pressure");
 
-  ddt(Pn) = 
-    - FV::Div_par_mod<ParLimiter>(Pn, Vn, sound_speed)                  // Parallel advection
-    - (2. / 3) * Pn * Div_par(Vn)                                       // Parallel compression
-    + Div_a_Grad_perp_upwind_flows(
-          (5. / 3) * DnnPn * advection_factor, logPnlim,                // Perpendicular advection
-          energy_flow_xlow, energy_flow_ylow)  
-     ;
+  // ddt(Pn) = 
+  //   - FV::Div_par_mod<ParLimiter>(Pn, Vn, sound_speed)                  // Parallel advection
+  //   - (2. / 3) * Pn * Div_par(Vn);                                      // Parallel compression
+
+  // if (perp_upwind) {                                                    // Perpendicular advection
+  //   ddt(Pn) += Div_a_Grad_perp_upwind_flows(
+  //                 (5. / 3) * DnnPn * advection_factor, logPnlim,
+  //                 energy_flow_xlow, energy_flow_ylow);
+
+  // } else {
+  //   ddt(Pn) += FV::Div_a_Grad_perp(                    
+  //                 (5. / 3) * DnnPn * advection_factor, logPnlim);
+  // }
+
   // The factor here is likely 5/2 as we're advecting internal energy and pressure.
   // Doing this still leaves a heat imbalance factor of 0.11 in the cells, but better than 0.33 with 3/2.
   energy_flow_xlow *= 5/2; 
@@ -721,10 +737,17 @@ void NeutralMixed::finally(const Options& state) {
 
   if (neutral_conduction) {
     ddt(Pn) += 
-      (2. / 3) * Div_a_Grad_perp_upwind_flows(kappa_n * conduction_factor, Tn,
-                            conduction_flow_xlow, conduction_flow_ylow)                      // Perpendicular conduction
-      + FV::Div_par_K_Grad_par(kappa_n * conduction_factor, Tn)                             // Parallel conduction
+
+      + FV::Div_par_K_Grad_par(kappa_n * conduction_factor, Tn)              // Parallel conduction
       ;
+
+    if (perp_upwind) {                                                      // Perpendicular conduction
+      ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows(kappa_n * conduction_factor, Tn,
+                            conduction_flow_xlow, conduction_flow_ylow);
+    } else {
+      ddt(Pn) += (2. / 3) * FV::Div_a_Grad_perp(kappa_n * conduction_factor, Tn);            
+    }
+
 
     // The factor here is likely 3/2 as this is pure energy flow, but needs checking.
     conduction_flow_xlow *= 3/2;
@@ -748,12 +771,19 @@ void NeutralMixed::finally(const Options& state) {
 
     ddt(NVn) =
         -AA * FV::Div_par_fvv<ParLimiter>(Nnlim, Vn, sound_speed)       // Parallel advection
-        - Grad_par(Pn)                                                  // Pressure gradient
-      + Div_a_Grad_perp_upwind_flows(
-            DnnNVn * advection_factor, logPnlim,                    // Perpendicular advection
-            momentum_flow_xlow,
-            momentum_flow_ylow) 
-      ;
+        - Grad_par(Pn);                                                 // Pressure gradient
+
+    if (perp_upwind) {                                                  // Perpendicular advection
+      ddt(NVn) += Div_a_Grad_perp_upwind_flows(
+                    DnnNVn * advection_factor, logPnlim,
+                    momentum_flow_xlow,
+                    momentum_flow_ylow);
+
+    } else {
+      ddt(NVn) += FV::Div_a_Grad_perp(                                      // Perpendicular advection
+                    DnnNVn * advection_factor, logPnlim);
+    }
+      
 
     if (neutral_viscosity) {
       // NOTE: The following viscosity terms are not (yet) balanced

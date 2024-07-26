@@ -68,6 +68,7 @@ private:
   bool freeze_kappa_rhs, freeze_dn_rhs;
   bool debug_prints;
   bool first_RHS {true};
+  bool perp_upwind;
   
   // Limit perpendicular advection fluxes to fraction of thermal speed.
   BoutReal advection_limit_alpha, conduction_limit_alpha, viscosity_limit_alpha;  // Limiters
