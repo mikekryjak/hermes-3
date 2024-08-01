@@ -760,10 +760,10 @@ void NeutralMixed::finally(const Options& state) {
     if (perp_upwind) {                                                      // Perpendicular conduction
 
       if (conduction_xonly) {
-        ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows(kappa_n * conduction_factor, Tn,
+        ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows_xonly(kappa_n * conduction_factor, Tn,
                               conduction_flow_xlow, conduction_flow_ylow);
       } else {
-        ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows_xonly(kappa_n * conduction_factor, Tn,
+        ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows(kappa_n * conduction_factor, Tn,
                               conduction_flow_xlow, conduction_flow_ylow);
       }
     } else {
