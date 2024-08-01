@@ -60,6 +60,8 @@ const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f);
 /// Version of function that returns flows
 const Field3D Div_a_Grad_perp_upwind_flows(const Field3D& a, const Field3D& f,
                                            Field3D& flux_xlow, Field3D& flux_ylow);
+const Field3D Div_a_Grad_perp_upwind_flows_xonly(const Field3D& a, const Field3D& f,
+                                           Field3D& flux_xlow, Field3D& flux_ylow);
 
 namespace FV {
 

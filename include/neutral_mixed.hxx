@@ -69,6 +69,7 @@ private:
   bool debug_prints;
   bool first_RHS {true};
   bool perp_upwind;
+  bool conduction_xonly;
   
   // Limit perpendicular advection fluxes to fraction of thermal speed.
   BoutReal advection_limit_alpha, conduction_limit_alpha, viscosity_limit_alpha;  // Limiters

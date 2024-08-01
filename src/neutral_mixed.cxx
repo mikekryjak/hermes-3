@@ -166,6 +166,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                           .doc("Use upwind operator for perp advection?")
                           .withDefault<bool>(true);
 
+  conduction_xonly = options["conduction_xonly"]
+                          .doc("Limit conduction to only the X direction?")
+                          .withDefault<bool>(true);
+
   diffusion_collisions_mode = options["diffusion_collisions_mode"]
       .doc("Can be legacy: all enabled collisions excl. IZ, or afn: CX, IZ and NN collisions")
       .withDefault<std::string>("legacy");
@@ -754,8 +758,14 @@ void NeutralMixed::finally(const Options& state) {
       ;
 
     if (perp_upwind) {                                                      // Perpendicular conduction
-      ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows(kappa_n * conduction_factor, Tn,
-                            conduction_flow_xlow, conduction_flow_ylow);
+
+      if (conduction_xonly) {
+        ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows(kappa_n * conduction_factor, Tn,
+                              conduction_flow_xlow, conduction_flow_ylow);
+      } else {
+        ddt(Pn) += (2. / 3) * Div_a_Grad_perp_upwind_flows_xonly(kappa_n * conduction_factor, Tn,
+                              conduction_flow_xlow, conduction_flow_ylow);
+      }
     } else {
       ddt(Pn) += (2. / 3) * FV::Div_a_Grad_perp(kappa_n * conduction_factor, Tn);            
     }
