@@ -1140,3 +1140,111 @@ const Field3D Div_a_Grad_perp_upwind_flows(const Field3D& a, const Field3D& f,
 
   return result;
 }
+
+
+
+/// Div ( a Grad_perp(f) )  -- diffusion
+///
+/// Returns the flows in the final arguments
+///
+/// Flows are always in the positive {x,y} direction
+/// i.e xlow(i,j) is the flow into cell (i,j) from the left,
+///               and the flow out of cell (i-1,j) to the right
+/// 
+///           ylow(i,j+1)
+///              ^
+///           +---|---+
+///           |       |
+/// xlow(i,j) -> (i,j) -> xlow(i+1,j)
+///           |   ^   |
+///           +---|---+
+///           ylow(i,j)
+///
+///
+const Field3D Div_a_Grad_perp_upwind_flows_xonly(const Field3D& a, const Field3D& f,
+                                           Field3D &flow_xlow,
+                                           Field3D &flow_ylow) {
+  ASSERT2(a.getLocation() == f.getLocation());
+
+  Mesh* mesh = a.getMesh();
+
+  Field3D result{zeroFrom(f)};
+
+  Coordinates* coord = f.getCoordinates();
+
+  // Zero all flows
+  flow_xlow = 0.0;
+  flow_ylow = 0.0;
+
+  // Flux in x
+
+  int xs = mesh->xstart - 1;
+  int xe = mesh->xend;
+
+  for (int i = xs; i <= xe; i++)
+    for (int j = mesh->ystart; j <= mesh->yend; j++) {
+      for (int k = 0; k < mesh->LocalNz; k++) {
+        // Calculate flux from i to i+1
+
+        const BoutReal gradient = (coord->J(i, j) * coord->g11(i, j)
+                                     + coord->J(i + 1, j) * coord->g11(i + 1, j))
+                                  * (f(i + 1, j, k) - f(i, j, k))
+                                  / (coord->dx(i, j) + coord->dx(i + 1, j));
+
+        // Use the upwind coefficient
+        const BoutReal fout = gradient * ((gradient > 0) ? a(i + 1, j, k) : a(i, j, k));
+
+        result(i, j, k) += fout / (coord->dx(i, j) * coord->J(i, j));
+        result(i + 1, j, k) -= fout / (coord->dx(i + 1, j) * coord->J(i + 1, j));
+
+        // Flow will be positive in the positive coordinate direction
+        flow_xlow(i + 1, j, k) = -1.0 * fout * coord->dy(i, j) * coord->dz(i, j);
+        flow_xlow(i + 1, j, k) = -1.0 * fout * coord->dy(i, j) * coord->dz(i, j);
+      }
+    }
+
+  // Y and Z fluxes require Y derivatives
+
+  // Fields containing values along the magnetic field
+  Field3D fup(mesh), fdown(mesh);
+  Field3D aup(mesh), adown(mesh);
+
+  // Values on this y slice (centre).
+  // This is needed because toFieldAligned may modify the field
+  Field3D fc = f;
+  Field3D ac = a;
+
+  // Result of the Y and Z fluxes
+  Field3D yzresult(mesh);
+  yzresult.allocate();
+
+  if (f.hasParallelSlices() && a.hasParallelSlices()) {
+    // Both inputs have yup and ydown
+
+    fup = f.yup();
+    fdown = f.ydown();
+
+    aup = a.yup();
+    adown = a.ydown();
+  } else {
+    // At least one input doesn't have yup/ydown fields.
+    // Need to shift to/from field aligned coordinates
+
+    fup = fdown = fc = toFieldAligned(f);
+    aup = adown = ac = toFieldAligned(a);
+    yzresult.setDirectionY(YDirectionType::Aligned);
+    flow_ylow.setDirectionY(YDirectionType::Aligned);
+  }
+
+  // Y flux
+
+  for (int i = mesh->xstart; i <= mesh->xend; i++) {
+    for (int j = mesh->ystart; j <= mesh->yend; j++) {
+       for (int k = 0; k < mesh->LocalNz; k++) {
+        flow_ylow(i, j, k) = 0;
+       }
+      }
+    }
+
+  return result;
+}

@@ -41,27 +41,68 @@ private:
 
   BoutReal AA; ///< Atomic mass (proton = 1)
 
-  Field3D Dnn; ///< Diffusion coefficient
-  Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
+  Field3D Dnn, Dnn_unlimited; ///< Diffusion coefficient
+  Field3D DnnNn, DnnPn, DnnNVn;
+  Field3D Dmax;
+  Field3D gradlogP, gradperplogP, gradperpT;
+  Field3D nu; ///< Collisionality to use for diffusion
+  std::vector<std::string> collision_names; ///< Collisions used for collisionality
+  std::string diffusion_collisions_mode;  ///< Collision selection, either afn or legacy
 
   bool sheath_ydown, sheath_yup;
 
   BoutReal nn_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.
+  BoutReal pn_floor; ///< Minimum Pn used when dividing Pn by Nn to get Tn.
 
   BoutReal flux_limit; ///< Diffusive flux limit
   BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
+  BoutReal maximum_mfp;   ///< Reduce diffusion using physical MFP limit
+  Field3D vth;   ///< Thermal speed to use in flux limiter
+  bool legacy_vth_limiter;
+  bool asymptotic_limiter, asymptotic_limiter_advection;
+  bool constant_conduction;
+  bool override_limiter;   // Force conduction and viscosity limiters to use the advection limiter?
+  bool legacy_limiter; 
+  bool legacy_separate_conduction;
+  bool freeze_kappa_linear, freeze_dn_linear;
+  bool freeze_kappa_rhs, freeze_dn_rhs;
+  bool debug_prints;
+  bool first_RHS {true};
+  bool perp_upwind;
+  bool conduction_xonly;
+  
+  // Limit perpendicular advection fluxes to fraction of thermal speed.
+  BoutReal advection_limit_alpha, conduction_limit_alpha, viscosity_limit_alpha;  // Limiters
+  BoutReal flux_limit_gamma;   ///< Sharpness of perpendicular flux limitation. Usually 1 or 2
+  Field3D advection_factor, conduction_factor, viscosity_factor;   // Multiplier to achieve limit
+  Field3D advection_flux_abs, advection_limit;
 
   bool neutral_viscosity; ///< include viscosity?
+  bool neutral_conduction; ///< Include heat conduction?
   bool evolve_momentum; ///< Evolve parallel momentum?
+  
+  Field3D kappa_n, eta_n; ///< Neutral conduction and viscosity
+  Field3D kappa_n_unlimited, kappa_n_Dnchained, kappa_n_max;
 
   bool precondition {true}; ///< Enable preconditioner?
+  bool lax_flux; ///< Use Lax flux for advection terms
+  
   std::unique_ptr<Laplacian> inv; ///< Laplacian inversion used for preconditioning
 
   Field3D density_source, pressure_source; ///< External input source
   Field3D Sn, Sp, Snv; ///< Particle, pressure and momentum source
+  Field3D sound_speed; ///< Sound speed for use with Lax flux
+  Field3D perp_nn_adv_src; ///< Source due to perpendicular advection operator
+  Field3D par_nn_adv_src; ///< Source due to parallel advection operator
 
   bool output_ddt; ///< Save time derivatives?
   bool diagnose; ///< Save additional diagnostics?
+
+  // Flow diagnostics
+  Field3D particle_flow_xlow, particle_flow_ylow;
+  Field3D momentum_flow_xlow, momentum_flow_ylow;
+  Field3D energy_flow_xlow, energy_flow_ylow;
+  Field3D conduction_flow_xlow, conduction_flow_ylow;
 };
 
 namespace {
