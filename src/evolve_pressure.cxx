@@ -365,6 +365,11 @@ void EvolvePressure::finally(const Options& state) {
   if (species.isSet("energy_source")) {
     Sp += (2. / 3) * get<Field3D>(species["energy_source"]); // For diagnostic output
   }
+#if CHECKLEVEL >= 1
+  if (species.isSet("pressure_source")) {
+    throw BoutException("Components must evolve `energy_source` rather then `pressure_source`");
+  }
+#endif
   ddt(P) += Sp;
 
   // Term to force evolved P towards N * T
@@ -427,7 +432,7 @@ void EvolvePressure::outputVars(Options& state) {
       set_with_attrs(state[std::string("kappa_par_") + name], kappa_par,
                      {{"time_dimension", "t"},
                       {"units", "W / m / eV"},
-                      {"conversion", Pnorm * Omega_ci * SQ(rho_s0)},
+                      {"conversion", (Pnorm * Omega_ci * SQ(rho_s0) )/ Tnorm},
                       {"long_name", name + " heat conduction coefficient"},
                       {"species", name},
                       {"source", "evolve_pressure"}});

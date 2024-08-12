@@ -969,7 +969,8 @@ listed after all the species groups in the component list, so that all
 the species are present in the state.
 
 One of the most important is the `collisions`_ component. This sets collision
-times for all species, which are then used 
+times for all species, which are then used in other components to calculate
+quantities like heat diffusivities and viscosity closures.
 
 .. _sound_speed:
 
@@ -1176,12 +1177,18 @@ species :math:`b` due to temperature differences, is given by:
 
 - Ion-neutral and electron-neutral collisions
 
+  *Note*: These are disabled by default. If enabled, care is needed to
+  avoid double-counting collisions in atomic reactions e.g charge-exchange
+  reactions.
+  
   The cross-section for elastic collisions between charged and neutral
   particles can vary significantly. Here for simplicity we just take
   a value of :math:`5\times 10^{-19}m^2` from the NRL formulary.
 
 - Neutral-neutral collisions
 
+  *Note* This is enabled by default.
+  
   The cross-section is given by
 
 .. math::
@@ -1916,6 +1923,20 @@ This functionality is not yet currently implemented for helium or neon reactions
 | R_multiplier          | Impurity species | Fixed frac. impurity radiation rate   |
 +-----------------------+------------------+---------------------------------------+
 
+The charge exchange reaction can also be modified so that the momentum transfer channel is disabled. This can be useful when
+testing the impact of the full neutral momentum equation equation compared to purely diffusive neutrals. A diffusive only model 
+leads to all of the ion momentum being lost during charge exchange due to the lack of a neutral momentum equation.
+Enabling neutral momentum introduces a more accurate transport model but also prevents CX momentum from being lost, which
+can have a significant impact on the solution and may be difficult to analyse.
+Disabling the momentum transfer channel allows you to study the impact of the improved transport only and is set as:
+
+.. code-block:: ini
+
+   [hermes]
+   components = ..., c, ...
+
+   [reactions]
+   no_neutral_cx_mom_gain = true
 
 Electromagnetic fields
 ----------------------
@@ -2017,8 +2038,17 @@ the potential in time as a diffusion equation.
 .. doxygenstruct:: RelaxPotential
    :members:
 
+.. _electromagnetic:
+
 electromagnetic
 ~~~~~~~~~~~~~~~
+
+**Notes**: When using this module,
+1. Set ``sound_speed:alfven_wave=true`` so that the shear Alfven wave
+   speed is included in the calculation of the fastest parallel wave
+   speed for numerical dissipation.
+2. For tokamak simulations use zero-Laplacian boundary conditions
+   by setting ``electromagnetic:apar_boundary_neumann=false``.
 
 This component modifies the definition of momentum of all species, to
 include the contribution from the electromagnetic potential
