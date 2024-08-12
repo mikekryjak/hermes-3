@@ -361,6 +361,11 @@ void NeutralMixed::finally(const Options& state) {
   // Calculate cross-field diffusion from collision frequency
   //
   //
+    BoutReal neutral_lmax =
+      0.1 / get<BoutReal>(state["units"]["meters"]); // Normalised length
+
+  Field3D Rnn = sqrt(Tn / AA) / neutral_lmax; // Neutral-neutral collisions [normalised frequency]
+
   if (localstate.isSet("collision_frequency")) {
 
     // Collisionality
