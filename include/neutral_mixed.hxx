@@ -48,8 +48,6 @@ private:
   Field3D DnnNn, DnnPn, DnnNVn, DnnTn; ///< Used for operators
   Field3D eta_n; ///< Viscosity
   Field3D kappa_n; ///< Thermal conductivity
-  BoutReal flux_limit; ///< Diffusive flux limit
-  BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
 
   bool sheath_ydown, sheath_yup;
 
