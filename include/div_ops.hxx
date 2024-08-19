@@ -60,8 +60,10 @@ const Field2D Laplace_FV(const Field2D& k, const Field2D& f);
 const Field3D Div_a_Grad_perp_flows(const Field3D& a, const Field3D& f,
                                            Field3D& flux_xlow, Field3D& flux_ylow);
 /// Same but with upwinding
+/// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f);
 /// Same but with upwinding and flows
+/// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind_flows(const Field3D& a, const Field3D& f,
                                            Field3D& flux_xlow, Field3D& flux_ylow);
 
@@ -462,6 +464,7 @@ const Field3D Div_par_mod(const Field3D& f_in, const Field3D& v_in,
 /// the advects the upwind cell edge.
 ///
 /// 1st order upwinding is used in Y.
+/// WARNING: Causes crash in neutral_mixed integrated test
 template <typename CellEdges = MC>
 const Field3D Div_a_Grad_perp_limit(const Field3D& a, const Field3D& g, const Field3D& f) {
   ASSERT2(a.getLocation() == f.getLocation());

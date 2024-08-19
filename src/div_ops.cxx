@@ -793,6 +793,7 @@ const Field2D Laplace_FV(const Field2D &k, const Field2D &f) {
 }
 
 // Div ( a Grad_perp(f) )  -- diffusion
+/// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f) {
   ASSERT2(a.getLocation() == f.getLocation());
 
@@ -969,6 +970,7 @@ const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f) {
 ///           ylow(i,j)
 ///
 ///
+/// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind_flows(const Field3D& a, const Field3D& f,
                                            Field3D &flow_xlow,
                                            Field3D &flow_ylow) {
