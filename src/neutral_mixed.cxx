@@ -789,19 +789,16 @@ void NeutralMixed::finally(const Options& state) {
           
     ;
 
-  energy_flow_xlow *= 3/2; // Note: Should this be 5/2?
-  energy_flow_ylow *= 3/2;
-
   if (neutral_conduction) {
   ddt(Pn) += SPd_perp_cond      // Perpendicular conduction
       + SPd_par_cond;  // Parallel conduction
   }
   
   Sp = pressure_source;
-  SPd_src = (2. / 3) * get<Field3D>(localstate["energy_source"]);     // Sources set by collisions and reactions
+  
   SPd_ext_src = pressure_source;    // Sources set by the user
-
   if (localstate.isSet("energy_source")) {
+    SPd_src = (2. / 3) * get<Field3D>(localstate["energy_source"]);     // Sources set by collisions and reactions
     Sp += SPd_src;
   }
   ddt(Pn) += Sp;
@@ -1120,7 +1117,7 @@ void NeutralMixed::outputVars(Options& state) {
                       {"source", "evolve_momentum"}});
       }
       if (energy_flow_xlow.isAllocated()) {
-        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_xlow")], energy_flow_xlow,
+        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_xlow")], energy_flow_xlow * 5./2,
                     {{"time_dimension", "t"},
                       {"units", "W"},
                       {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
@@ -1130,7 +1127,7 @@ void NeutralMixed::outputVars(Options& state) {
                       {"source", "evolve_pressure"}});
       }
       if (energy_flow_ylow.isAllocated()) {
-        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_ylow")], energy_flow_ylow,
+        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_ylow")], energy_flow_ylow * 5./2,
                     {{"time_dimension", "t"},
                       {"units", "W"},
                       {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
