@@ -109,6 +109,17 @@ private:
   BoutReal time_normalisation; ///< Normalisation factor [s]
   bool source_time_dependent; ///< Is the input source time dependent?
   Field3D flow_xlow, flow_ylow; ///< Energy flow diagnostics
+  Field3D flow_ylow_conduction; ///< Conduction energy flow diagnostics
+  Field3D flow_ylow_kinetic;    ///< Parallel flow of kinetic energy
+
+  bool numerical_viscous_heating; ///< Include heating due to numerical viscosity?
+  bool fix_momentum_boundary_flux; ///< Fix momentum flux to boundary condition?
+
+  // Equation terms
+  Field3D Sp_nvh;       ///< Viscous heating due to lax flux numerical viscosity
+  Field3D Sp_pardiv_pv; ///< Pressure advection
+  Field3D Sp_vgradp;    ///< Compression
+  Field3D Sp_cond;      ///< Conduction
 };
 
 namespace {
