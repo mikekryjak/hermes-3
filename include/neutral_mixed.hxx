@@ -43,13 +43,23 @@ private:
 
   Field3D Dnn; ///< Diffusion coefficient
   Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
+  Field3D eta_n; ///< Viscosity
+  Field3D kappa_n; ///< Thermal conductivity
 
   bool sheath_ydown, sheath_yup;
 
   BoutReal nn_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.
 
-  BoutReal flux_limit; ///< Diffusive flux limit
-  BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
+  bool flux_limit; ///< Impose flux limiter?
+  bool particle_flux_limiter, heat_flux_limiter, momentum_flux_limiter; ///< Which limiters to impose
+  BoutReal maximum_mfp; ///< Maximum mean free path for diffusion. 0.1 by default, -1 is off.
+  BoutReal flux_limit_alpha, heat_flux_limit_alpha, mom_flux_limit_alpha;
+  BoutReal flux_limit_gamma;
+  Field3D particle_flux_factor; ///< Particle flux scaling factor
+  Field3D momentum_flux_factor;
+  Field3D heat_flux_factor;
+
+  Field3D SPd_par_adv, SPd_par_compr, SPd_perp_adv, SPd_perp_compr, SPd_perp_cond, SPd_par_cond, SPd_src, SPd_ext_src, SPd_visc_heat; ///< Neutral pressure terms
 
   bool neutral_viscosity; ///< include viscosity?
   bool evolve_momentum; ///< Evolve parallel momentum?
@@ -61,7 +71,9 @@ private:
   Field3D Sn, Sp, Snv; ///< Particle, pressure and momentum source
 
   bool output_ddt; ///< Save time derivatives?
-  bool diagnose; ///< Save additional diagnostics?
+  bool diagnose, diagnose_eqns; ///< Save additional diagnostics?
+  BoutReal perp_pressure_form, perp_cond_form, kappa_form, eta_form; ///< Form of the perpendicular neutral pressure terms
+  bool upwind_perp_diffusion; ///< Use a more dissipative perpendicular diffusion operator?
 };
 
 namespace {
