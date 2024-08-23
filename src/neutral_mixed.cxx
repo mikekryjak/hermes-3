@@ -88,6 +88,14 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                           .doc("Include neutral gas heat conduction?")
                           .withDefault<bool>(true);
 
+  perpendicular_transport = options["perpendicular_transport"]
+                          .doc("Solve perpendicular transport?")
+                          .withDefault<bool>(true);
+
+  parallel_transport = options["parallel_transport"]
+                          .doc("Solve parallel transport?")
+                          .withDefault<bool>(true);
+
   if (precondition) {
     inv = std::unique_ptr<Laplacian>(Laplacian::create(&options["precon_laplace"]));
 
@@ -356,10 +364,12 @@ void NeutralMixed::finally(const Options& state) {
 
   par_nn_adv_src = FV::Div_par_mod<ParLimiter>(Nn, Vn, sound_speed); // Parallel advection
 
-  ddt(Nn) =
-    - par_nn_adv_src
-    + perp_nn_adv_src
-    ;
+  if (parallel_transport) {
+    ddt(Nn) -= par_nn_adv_src;
+  }
+  if (perpendicular_transport) {
+    ddt(Nn) += perp_nn_adv_src;
+  }
 
   Sn = density_source; // Save for possible output
   if (localstate.isSet("density_source")) {
@@ -373,13 +383,16 @@ void NeutralMixed::finally(const Options& state) {
     // Neutral momentum
     TRACE("Neutral momentum");
 
-    ddt(NVn) =
-        -AA * FV::Div_par_fvv<ParLimiter>(Nnlim, Vn, sound_speed) // Momentum flow
-        - Grad_par(Pn) // Pressure gradient
-      + Div_a_Grad_perp_flows(DnnNVn, logPnlim,
+    if (parallel_transport) {
+      ddt(NVn) -= AA * FV::Div_par_fvv<ParLimiter>(Nnlim, Vn, sound_speed); // Momentum flow
+      ddt(NVn) -= Grad_par(Pn) // Pressure gradient
+    }
+    if (perpendicular_transport) {
+      ddt(NVn) += Div_a_Grad_perp_flows(DnnNVn, logPnlim,
                                      momentum_flow_xlow,
-                                     momentum_flow_ylow) // Perpendicular advection
-      ;
+                                     momentum_flow_ylow); // Perpendicular advection
+    }
+
 
     if (neutral_viscosity) {
       // NOTE: The following viscosity terms are not (yet) balanced
@@ -392,11 +405,12 @@ void NeutralMixed::finally(const Options& state) {
       // eta_n = (2. / 5) * kappa_n;
       //
 
-      ddt(NVn) +=
-          AA * FV::Div_a_Grad_perp((2. / 5) * DnnNn, Vn)      // Perpendicular viscosity
-          + AA * FV::Div_par_K_Grad_par((2. / 5) * DnnNn, Vn) // Parallel viscosity
-          ;
-    }
+      if (parallel_transport) {
+        ddt(NVn) += AA * FV::Div_par_K_Grad_par((2. / 5) * DnnNn, Vn); // Parallel viscosity
+      }
+      if (perpendicular_transport) {
+        ddt(NVn) += AA * FV::Div_a_Grad_perp((2. / 5) * DnnNn, Vn);     // Perpendicular viscosity
+      }
 
     if (localstate.isSet("momentum_source")) {
       Snv = get<Field3D>(localstate["momentum_source"]);
@@ -412,21 +426,28 @@ void NeutralMixed::finally(const Options& state) {
   // Neutral pressure
   TRACE("Neutral pressure");
 
-  ddt(Pn) = - FV::Div_par_mod<ParLimiter>(Pn, Vn, sound_speed) // Parallel advection
-            - (2. / 3) * Pn * Div_par(Vn)                      // Compression
-    + Div_a_Grad_perp_flows(DnnPn, logPnlim,
-                                   energy_flow_xlow, energy_flow_ylow) // Perpendicular advection
-     ;
+  if (parallel_transport) {
+    ddt(NVn) -= FV::Div_par_mod<ParLimiter>(Pn, Vn, sound_speed);   // Parallel advection
+    ddt(NVn) -= (2. / 3) * Pn * Div_par(Vn) ;                       // Parallel advection
+  }
+  if (perpendicular_transport) {
+    ddt(NVn) += Div_a_Grad_perp_flows(DnnPn, logPnlim,
+                                   energy_flow_xlow, energy_flow_ylow);   // Perpendicular viscosity
+  }
+
 
   // The factor here is 5/2 as we're advecting internal energy and pressure.
   energy_flow_xlow *= 5/2; 
   energy_flow_ylow *= 5/2;
 
   if (neutral_conduction) {
-    ddt(Pn) += Div_a_Grad_perp_flows(DnnNn, Tn,
-                        conduction_flow_xlow, conduction_flow_ylow)    // Perpendicular conduction
-      + FV::Div_par_K_Grad_par(DnnNn, Tn)        // Parallel conduction
-      ;
+    if (parallel_transport) {
+      ddt(Pn) += FV::Div_par_K_Grad_par(DnnNn, Tn);        // Parallel conduction
+    }
+    if (perpendicular_transport) {
+      ddt(Pn) += Div_a_Grad_perp_flows(DnnNn, Tn,
+                        conduction_flow_xlow, conduction_flow_ylow);    // Perpendicular conduction
+    }
   }
 
   // The factor here is likely 3/2 as this is pure energy flow, but needs checking.

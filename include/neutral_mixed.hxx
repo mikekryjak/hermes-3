@@ -56,6 +56,8 @@ private:
   bool neutral_conduction; ///< Include heat conduction?
   bool evolve_momentum; ///< Evolve parallel momentum?
 
+  bool parallel_transport, perpendicular_transport; ///< Include transport in a particular direction?
+
   bool precondition {true}; ///< Enable preconditioner?
   bool lax_flux; ///< Use Lax flux for advection terms
   std::unique_ptr<Laplacian> inv; ///< Laplacian inversion used for preconditioning
