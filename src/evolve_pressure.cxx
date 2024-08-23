@@ -80,6 +80,15 @@ EvolvePressure::EvolvePressure(std::string name, Options& alloptions, Solver* so
     .doc("Flux limiter factor. < 0 means no limit. Typical is 0.2 for electrons, 1 for ions.")
     .withDefault(-1.0);
 
+  core_kappa_factor = options["core_kappa_factor"]
+    .doc("Multiply kappa by this factor in the first core ring. Helpful in avoiding mesh seam fluctuations at low rtol.")
+    .withDefault(1.0);
+
+  core_kappa_scale_rings = options["core_kappa_scale_rings"]
+    .doc("Number of rings to scale kappa by core_kappa_factor. Default is 1.")
+    .withDefault<int>(1);
+
+
   p_div_v = options["p_div_v"]
                 .doc("Use p*Div(v) form? Default, false => v * Grad(p) form")
                 .withDefault<bool>(false);
@@ -340,6 +349,19 @@ void EvolvePressure::finally(const Options& state) {
         auto i = indexAt(kappa_par, r.ind, mesh->yend, jz);
         auto ip = i.yp();
         kappa_par[ip] = kappa_par[i];
+      }
+    }
+
+    
+    // Loop over first core ring and multiply kappa by core_kappa_factor
+    for (int ix = mesh->firstX(); ix < mesh->firstX() + core_kappa_scale_rings + 1; ix++) {
+      for (int iy = 0; iy < mesh->LocalNy ; iy++) {
+        for (int iz = 0; iz < mesh->LocalNz; iz++) {
+
+          if (mesh->periodicY(ix)) { // select only periodic, i.e. core region
+            kappa_par(ix, iy, iz) *= core_kappa_factor;
+          }
+        }
       }
     }
 
