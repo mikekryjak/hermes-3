@@ -385,7 +385,7 @@ void NeutralMixed::finally(const Options& state) {
 
     if (parallel_transport) {
       ddt(NVn) -= AA * FV::Div_par_fvv<ParLimiter>(Nnlim, Vn, sound_speed); // Momentum flow
-      ddt(NVn) -= Grad_par(Pn) // Pressure gradient
+      ddt(NVn) -= Grad_par(Pn); // Pressure gradient
     }
     if (perpendicular_transport) {
       ddt(NVn) += Div_a_Grad_perp_flows(DnnNVn, logPnlim,
@@ -411,6 +411,7 @@ void NeutralMixed::finally(const Options& state) {
       if (perpendicular_transport) {
         ddt(NVn) += AA * FV::Div_a_Grad_perp((2. / 5) * DnnNn, Vn);     // Perpendicular viscosity
       }
+    }
 
     if (localstate.isSet("momentum_source")) {
       Snv = get<Field3D>(localstate["momentum_source"]);
