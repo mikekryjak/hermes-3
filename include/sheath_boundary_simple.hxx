@@ -89,7 +89,8 @@ private:
   Field3D wall_potential; ///< Voltage of the wall. Normalised units.
 
   bool no_flow; ///< No flow speed, only remove energy
-  bool free_density, free_pressure; ///< Force free boundary on N/P (instead of sometimes Neumann?)
+
+  BoutReal density_boundary_mode, pressure_boundary_mode, temperature_boundary_mode; ///< BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree
 };
 
 namespace {

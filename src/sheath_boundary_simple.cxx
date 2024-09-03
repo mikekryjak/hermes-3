@@ -31,17 +31,30 @@ Ind3D indexAt(const Field3D& f, int x, int y, int z) {
 ///
 ///  fm  fc | fp
 ///         ^ boundary
-///
+/// 
 /// exp( 2*log(fc) - log(fm) )
-///
-BoutReal limitFree(BoutReal fm, BoutReal fc, bool free) {
+/// Mode 0: default (exponential extrapolation if decreases, Neumann if increases)
+/// Mode 1: always exponential extrapolation
+/// Mode 2: always linear extrapolation
+
+BoutReal limitFree(BoutReal fm, BoutReal fc, BoutReal mode) {
   if ((fm < fc) && (!free)) {
     return fc; // Neumann rather than increasing into boundary
   }
   if (fm < 1e-10) {
     return fc; // Low / no density condition
   }
-  BoutReal fp = SQ(fc) / fm;
+
+  BoutReal fp = 0;
+  if ((mode == 0) || (mode == 1)) {
+    fp = SQ(fc) / fm;     // Exponential
+  } else if (mode == 2) {
+    fp = 2.0 * fc - fm;   // Linear
+  } 
+
+  return fp;  // Extrapolation
+
+
 #if CHECKLEVEL >= 2
   if (!std::isfinite(fp)) {
     throw BoutException("SheathBoundary limitFree: {}, {} -> {}", fm, fc, fp);
@@ -111,13 +124,19 @@ SheathBoundarySimple::SheathBoundarySimple(std::string name, Options& alloptions
     .doc("Set zero particle flow, keeping energy flow")
     .withDefault<bool>(false);
 
-  free_density = options["free_density"]
-    .doc("Set density to free boundary")
+  density_boundary_mode = options["density_boundary_mode"]
+    .doc("BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree")
     .withDefault<bool>(false);
 
-  free_pressure = options["free_pressure"]
-    .doc("Set pressure to free boundary")
+  pressure_boundary_mode = options["pressure_boundary_mode"]
+    .doc("BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree")
     .withDefault<bool>(false);
+
+  temperature_boundary_mode = options["temperature_boundary_mode"]
+    .doc("BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree")
+    .withDefault<bool>(false);
+
+  
 }
 
 void SheathBoundarySimple::transform(Options& state) {
@@ -194,9 +213,9 @@ void SheathBoundarySimple::transform(Options& state) {
             // This ensures that the guard cell values remain positive
             // exp( 2*log(N[i]) - log(N[ip]) )
 
-            const BoutReal Ni_im = limitFree(Ni[ip], Ni[i], free_density);
-            const BoutReal Ti_im = limitFree(Ti[ip], Ti[i], false);
-            const BoutReal Te_im = limitFree(Te[ip], Te[i], false);
+            const BoutReal Ni_im = limitFree(Ni[ip], Ni[i], density_boundary_mode);
+            const BoutReal Ti_im = limitFree(Ti[ip], Ti[i], temperature_boundary_mode);
+            const BoutReal Te_im = limitFree(Te[ip], Te[i], temperature_boundary_mode);
 
             // Calculate sheath values at half-way points (cell edge)
             const BoutReal nisheath = 0.5 * (Ni_im + Ni[i]);
@@ -226,9 +245,9 @@ void SheathBoundarySimple::transform(Options& state) {
             auto i = indexAt(Ni, r.ind, mesh->yend, jz);
             auto im = i.ym();
 
-            const BoutReal Ni_ip = limitFree(Ni[im], Ni[i], free_density);
-            const BoutReal Ti_ip = limitFree(Ti[im], Ti[i], false);
-            const BoutReal Te_ip = limitFree(Te[im], Te[i], false);
+            const BoutReal Ni_ip = limitFree(Ni[im], Ni[i], density_boundary_mode);
+            const BoutReal Ti_ip = limitFree(Ti[im], Ti[i], temperature_boundary_mode);
+            const BoutReal Te_ip = limitFree(Te[im], Te[i], temperature_boundary_mode);
 
             // Calculate sheath values at half-way points (cell edge)
             const BoutReal nisheath = 0.5 * (Ni_ip + Ni[i]);
@@ -260,8 +279,8 @@ void SheathBoundarySimple::transform(Options& state) {
           auto i = indexAt(phi, r.ind, mesh->ystart, jz);
           auto ip = i.yp();
 
-          const BoutReal Ne_im = limitFree(Ne[ip], Ne[i], free_density);
-          const BoutReal Te_im = limitFree(Te[ip], Te[i], false);
+          const BoutReal Ne_im = limitFree(Ne[ip], Ne[i], density_boundary_mode);
+          const BoutReal Te_im = limitFree(Te[ip], Te[i], temperature_boundary_mode);
 
           // Calculate sheath values at half-way points (cell edge)
           const BoutReal nesheath = 0.5 * (Ne_im + Ne[i]);
@@ -285,8 +304,8 @@ void SheathBoundarySimple::transform(Options& state) {
           auto i = indexAt(phi, r.ind, mesh->yend, jz);
           auto im = i.ym();
 
-          const BoutReal Ne_ip = limitFree(Ne[im], Ne[i], free_density);
-          const BoutReal Te_ip = limitFree(Te[im], Te[i], false);
+          const BoutReal Ne_ip = limitFree(Ne[im], Ne[i], density_boundary_mode);
+          const BoutReal Te_ip = limitFree(Te[im], Te[i], temperature_boundary_mode);
 
           // Calculate sheath values at half-way points (cell edge)
           const BoutReal nesheath = 0.5 * (Ne_ip + Ne[i]);
@@ -327,9 +346,9 @@ void SheathBoundarySimple::transform(Options& state) {
         // This ensures that the guard cell values remain positive
         // exp( 2*log(N[i]) - log(N[ip]) )
 
-        Ne[im] = limitFree(Ne[ip], Ne[i], free_density);
-        Te[im] = limitFree(Te[ip], Te[i], false);
-        Pe[im] = limitFree(Pe[ip], Pe[i], free_pressure);
+        Ne[im] = limitFree(Ne[ip], Ne[i], density_boundary_mode);
+        Te[im] = limitFree(Te[ip], Te[i], temperature_boundary_mode);
+        Pe[im] = limitFree(Pe[ip], Pe[i], pressure_boundary_mode);
 
         // Free boundary potential linearly extrapolated
         phi[im] = 2 * phi[i] - phi[ip];
@@ -385,9 +404,9 @@ void SheathBoundarySimple::transform(Options& state) {
         // This ensures that the guard cell values remain positive
         // exp( 2*log(N[i]) - log(N[ip]) )
 
-        Ne[ip] = limitFree(Ne[im], Ne[i], free_density);
-        Te[ip] = limitFree(Te[im], Te[i], false);
-        Pe[ip] = limitFree(Pe[im], Pe[i], free_pressure);
+        Ne[ip] = limitFree(Ne[im], Ne[i], density_boundary_mode);
+        Te[ip] = limitFree(Te[im], Te[i], temperature_boundary_mode);
+        Pe[ip] = limitFree(Pe[im], Pe[i], pressure_boundary_mode);
 
         // Free boundary potential linearly extrapolated.
         phi[ip] = 2 * phi[i] - phi[im];
@@ -516,9 +535,9 @@ void SheathBoundarySimple::transform(Options& state) {
           // This ensures that the guard cell values remain positive
           // exp( 2*log(N[i]) - log(N[ip]) )
 
-          Ni[im] = limitFree(Ni[ip], Ni[i], free_density);
-          Ti[im] = limitFree(Ti[ip], Ti[i], false);
-          Pi[im] = limitFree(Pi[ip], Pi[i], free_pressure);
+          Ni[im] = limitFree(Ni[ip], Ni[i], density_boundary_mode);
+          Ti[im] = limitFree(Ti[ip], Ti[i], temperature_boundary_mode);
+          Pi[im] = limitFree(Pi[ip], Pi[i], pressure_boundary_mode);
 
           // Calculate sheath values at half-way points (cell edge)
           const BoutReal nesheath = 0.5 * (Ne[im] + Ne[i]);
@@ -579,9 +598,9 @@ void SheathBoundarySimple::transform(Options& state) {
           // This ensures that the guard cell values remain positive
           // exp( 2*log(N[i]) - log(N[ip]) )
 
-          Ni[ip] = limitFree(Ni[im], Ni[i], free_density);
-          Ti[ip] = limitFree(Ti[im], Ti[i], false);
-          Pi[ip] = limitFree(Pi[im], Pi[i], free_pressure);
+          Ni[ip] = limitFree(Ni[im], Ni[i], density_boundary_mode);
+          Ti[ip] = limitFree(Ti[im], Ti[i], temperature_boundary_mode);
+          Pi[ip] = limitFree(Pi[im], Pi[i], pressure_boundary_mode);
 
           // Calculate sheath values at half-way points (cell edge)
           const BoutReal nesheath = 0.5 * (Ne[ip] + Ne[i]);
