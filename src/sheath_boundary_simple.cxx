@@ -38,7 +38,7 @@ Ind3D indexAt(const Field3D& f, int x, int y, int z) {
 /// Mode 2: always linear extrapolation
 
 BoutReal limitFree(BoutReal fm, BoutReal fc, BoutReal mode) {
-  if ((fm < fc) && (!free)) {
+  if ((fm < fc) && (mode == 0)) {
     return fc; // Neumann rather than increasing into boundary
   }
   if (fm < 1e-10) {
@@ -50,7 +50,9 @@ BoutReal limitFree(BoutReal fm, BoutReal fc, BoutReal mode) {
     fp = SQ(fc) / fm;     // Exponential
   } else if (mode == 2) {
     fp = 2.0 * fc - fm;   // Linear
-  } 
+  } else {
+    throw BoutException("Unknown boundary mode");
+  }
 
   return fp;  // Extrapolation
 
@@ -126,15 +128,15 @@ SheathBoundarySimple::SheathBoundarySimple(std::string name, Options& alloptions
 
   density_boundary_mode = options["density_boundary_mode"]
     .doc("BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree")
-    .withDefault<bool>(false);
+    .withDefault<BoutReal>(0);
 
   pressure_boundary_mode = options["pressure_boundary_mode"]
     .doc("BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree")
-    .withDefault<bool>(false);
+    .withDefault<BoutReal>(0);
 
   temperature_boundary_mode = options["temperature_boundary_mode"]
     .doc("BC mode: 0=LimitFree, 1=ExponentialFree, 2=LinearFree")
-    .withDefault<bool>(false);
+    .withDefault<BoutReal>(0);
 
   
 }
