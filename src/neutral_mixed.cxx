@@ -602,7 +602,9 @@ void NeutralMixed::finally(const Options& state) {
 
   // Perpendicular advection
   if (perp_operator == 0) {
-    ddt(Nn) += FV::Div_a_Grad_perp(DnnNn * particle_flux_factor, logPnlim);
+    ddt(Nn) += Div_a_Grad_perp_flows(DnnNn * particle_flux_factor, logPnlim,
+                                   particle_flow_xlow,
+                                   particle_flow_ylow);
   } else if (perp_operator == 1) {                                       
     ddt(Nn) += FV::Div_a_Grad_perp_limit<PerpLimiter>(Dnn * particle_flux_factor, Nn, logPnlim);
   } else if (perp_operator == 2) {
@@ -632,7 +634,9 @@ void NeutralMixed::finally(const Options& state) {
 
     // Perpendicular advection
     if (perp_operator == 0) {      
-      ddt(NVn) += FV::Div_a_Grad_perp(DnnNVn * particle_flux_factor, logPnlim);                               
+      ddt(NVn) += Div_a_Grad_perp_flows(DnnNVn * particle_flux_factor, logPnlim,
+                                    momentum_flow_xlow,
+                                    momentum_flow_ylow);                               
     } else if (perp_operator == 1) {
       ddt(NVn) += FV::Div_a_Grad_perp_limit<PerpLimiter>(Dnn, NVn * particle_flux_factor, logPnlim);
     } else if (perp_operator == 2) {
@@ -659,7 +663,9 @@ void NeutralMixed::finally(const Options& state) {
       // NOTE: Diffusion flow operator not yet implemented
       // Perpendicular viscosity
       if (perp_operator == 0) {    
-        ddt(NVn) += AA * FV::Div_a_Grad_perp((2. / 5) * DnnNn, Vn);                                   
+        ddt(NVn) += AA * Div_a_Grad_perp_flows((2. / 5) * DnnNn, Vn, 
+                                      viscosity_flow_xlow,
+                                      viscosity_flow_ylow);                                   
       } else {
         ddt(NVn) += FV::Div_a_Grad_perp_limit<PerpLimiter>((2. / 5) * Dnn, Nn, Vn);
       };
@@ -692,7 +698,8 @@ void NeutralMixed::finally(const Options& state) {
   if (perp_pressure_form == 1) {
 
     if (perp_operator == 0) {
-        SPd_perp_adv = FV::Div_a_Grad_perp(                             (5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_adv = Div_a_Grad_perp_flows(                           (5. / 3) * DnnPn * particle_flux_factor, logPnlim,
+                                   energy_flow_xlow, energy_flow_ylow);
       } else if (perp_operator == 1) {
         SPd_perp_adv = FV::Div_a_Grad_perp_limit<PerpLimiter>(          (5. / 3) * Dnn * particle_flux_factor, Pn, logPnlim);
       } else if (perp_operator == 2) {
@@ -707,7 +714,8 @@ void NeutralMixed::finally(const Options& state) {
   } else if (perp_pressure_form == 2) {
 
     if (perp_operator == 0) {
-        SPd_perp_adv = FV::Div_a_Grad_perp(                              DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_adv = Div_a_Grad_perp_flows(                        DnnPn * particle_flux_factor, logPnlim,
+                                                    energy_flow_xlow, energy_flow_ylow); 
       } else if (perp_operator == 1) {
         SPd_perp_adv = FV::Div_a_Grad_perp_limit<PerpLimiter>(           Dnn * particle_flux_factor, Pn, logPnlim);
       } else if (perp_operator == 2) {
@@ -724,7 +732,8 @@ void NeutralMixed::finally(const Options& state) {
   } else if (perp_pressure_form == 3) {
     
     if (perp_operator == 0) {
-        SPd_perp_adv = FV::Div_a_Grad_perp(                              DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_adv = Div_a_Grad_perp_flows(                        DnnPn * particle_flux_factor, logPnlim,
+                                                    energy_flow_xlow, energy_flow_ylow); 
         SPd_perp_compr = -(2. / 3) * Pn * FV::Div_a_Grad_perp(           Dnn * particle_flux_factor, logPnlim);
       } else if (perp_operator == 1) {
         SPd_perp_adv = FV::Div_a_Grad_perp_limit<PerpLimiter>(           Dnn * particle_flux_factor, Pn, logPnlim);
@@ -744,7 +753,8 @@ void NeutralMixed::finally(const Options& state) {
         SPd_perp_compr =                                                 (2. / 3) * DnnPn * particle_flux_factor * Grad_perp(logPnlim) * Grad_perp(Pnlim);
 
     if (perp_operator == 0) {
-        SPd_perp_adv = FV::Div_a_Grad_perp(                              (5. / 3) * DnnPn * particle_flux_factor, logPnlim);
+        SPd_perp_adv = Div_a_Grad_perp_flows(                        (5. / 3) * DnnPn * particle_flux_factor, logPnlim,
+                                                    energy_flow_xlow, energy_flow_ylow); 
       } else if (perp_operator == 1) {
         SPd_perp_adv = FV::Div_a_Grad_perp_limit<PerpLimiter>(           (5. / 3) * Dnn * particle_flux_factor, Pn, logPnlim);
       } else if (perp_operator == 2) {
@@ -761,7 +771,9 @@ void NeutralMixed::finally(const Options& state) {
     
     // Note: flow operators for diffusive processes not implemented yet
     if (perp_operator == 0) {
-        SPd_perp_cond =                                                  (2. / 3) * FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+        SPd_perp_cond =                                                  (2. / 3) * Div_a_Grad_perp_flows(kappa_n * heat_flux_factor, Tn,
+                                                    conduction_flow_xlow,
+                                                    conduction_flow_ylow);
       } else {
         SPd_perp_cond =                                                  (2. / 3) * Div_a_Grad_perp_upwind(kappa_n * heat_flux_factor, Tn);
       };
@@ -771,7 +783,9 @@ void NeutralMixed::finally(const Options& state) {
     
 
     if (perp_operator == 0) {
-        SPd_perp_cond =                                                  FV::Div_a_Grad_perp(kappa_n * heat_flux_factor, Tn);
+        SPd_perp_cond =                                                  Div_a_Grad_perp_flows(kappa_n * heat_flux_factor, Tn,
+                                                    conduction_flow_xlow,
+                                                    conduction_flow_ylow);
       } else {
         SPd_perp_cond =                                                  Div_a_Grad_perp_upwind(kappa_n * heat_flux_factor, Tn);
       };
@@ -793,6 +807,14 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Pn) += SPd_perp_cond      // Perpendicular conduction
       + SPd_par_cond;  // Parallel conduction
   }
+
+  // The factor here is likely 3/2 as this is pure energy flow, but needs checking.
+  conduction_flow_xlow *= 3./2;
+  conduction_flow_ylow *= 3./2;
+
+  // Advection is 5/2
+  energy_flow_xlow *= 5./2;
+  energy_flow_ylow *= 5./2;
   
   Sp = pressure_source;
   
@@ -1117,7 +1139,7 @@ void NeutralMixed::outputVars(Options& state) {
                       {"source", "evolve_momentum"}});
       }
       if (energy_flow_xlow.isAllocated()) {
-        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_xlow")], energy_flow_xlow * 5./2,
+        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_xlow")], energy_flow_xlow ,
                     {{"time_dimension", "t"},
                       {"units", "W"},
                       {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
@@ -1127,7 +1149,7 @@ void NeutralMixed::outputVars(Options& state) {
                       {"source", "evolve_pressure"}});
       }
       if (energy_flow_ylow.isAllocated()) {
-        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_ylow")], energy_flow_ylow * 5./2,
+        set_with_attrs(state[std::string("EnergyFlow_") + name + std::string("_ylow")], energy_flow_ylow ,
                     {{"time_dimension", "t"},
                       {"units", "W"},
                       {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
@@ -1136,6 +1158,26 @@ void NeutralMixed::outputVars(Options& state) {
                       {"species", name},
                       {"source", "evolve_pressure"}});
       }
+    }
+    if (conduction_flow_xlow.isAllocated()) {
+      set_with_attrs(state[std::string("ConductionFlow_") + name + std::string("_xlow")],conduction_flow_xlow,
+                   {{"time_dimension", "t"},
+                    {"units", "W"},
+                    {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
+                    {"standard_name", "power"},
+                    {"long_name", name + " conducted power through X cell face. Note: May be incomplete."},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
+    }
+    if (conduction_flow_ylow.isAllocated()) {
+      set_with_attrs(state[std::string("ConductionFlow_") + name + std::string("_ylow")], conduction_flow_ylow,
+                   {{"time_dimension", "t"},
+                    {"units", "W"},
+                    {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
+                    {"standard_name", "power"},
+                    {"long_name", name + " conducted power through Y cell face. Note: May be incomplete."},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
     }
   }
 }
