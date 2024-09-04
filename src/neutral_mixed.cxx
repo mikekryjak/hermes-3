@@ -793,6 +793,10 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Pn) += SPd_perp_cond      // Perpendicular conduction
       + SPd_par_cond;  // Parallel conduction
   }
+
+  // The factor here is likely 3/2 as this is pure energy flow, but needs checking.
+  conduction_flow_xlow *= 3/2;
+  conduction_flow_ylow *= 3/2;
   
   Sp = pressure_source;
   
@@ -1136,6 +1140,26 @@ void NeutralMixed::outputVars(Options& state) {
                       {"species", name},
                       {"source", "evolve_pressure"}});
       }
+    }
+    if (conduction_flow_xlow.isAllocated()) {
+      set_with_attrs(state[std::string("ConductionFlow_") + name + std::string("_xlow")],conduction_flow_xlow,
+                   {{"time_dimension", "t"},
+                    {"units", "W"},
+                    {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
+                    {"standard_name", "power"},
+                    {"long_name", name + " conducted power through X cell face. Note: May be incomplete."},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
+    }
+    if (conduction_flow_ylow.isAllocated()) {
+      set_with_attrs(state[std::string("ConductionFlow_") + name + std::string("_ylow")], conduction_flow_ylow,
+                   {{"time_dimension", "t"},
+                    {"units", "W"},
+                    {"conversion", rho_s0 * SQ(rho_s0) * Pnorm * Omega_ci},
+                    {"standard_name", "power"},
+                    {"long_name", name + " conducted power through Y cell face. Note: May be incomplete."},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
     }
   }
 }
