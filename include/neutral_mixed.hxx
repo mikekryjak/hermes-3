@@ -90,6 +90,7 @@ private:
   Field3D momentum_flow_xlow, momentum_flow_ylow;
   Field3D energy_flow_xlow, energy_flow_ylow;
   Field3D conduction_flow_xlow, conduction_flow_ylow;
+  Field3D viscosity_flow_xlow, viscosity_flow_ylow;
 };
 
 namespace {
