@@ -809,12 +809,16 @@ void NeutralMixed::finally(const Options& state) {
   }
 
   // The factor here is likely 3/2 as this is pure energy flow, but needs checking.
-  conduction_flow_xlow *= 3./2;
-  conduction_flow_ylow *= 3./2;
+  if(conduction_flow_xlow.isAllocated()){
+    conduction_flow_xlow *= 3./2;
+    conduction_flow_ylow *= 3./2;
+  }
 
   // Advection is 5/2
-  energy_flow_xlow *= 5./2;
-  energy_flow_ylow *= 5./2;
+  if(energy_flow_xlow.isAllocated()){
+    energy_flow_xlow *= 5./2;
+    energy_flow_ylow *= 5./2;
+  }
   
   Sp = pressure_source;
   
