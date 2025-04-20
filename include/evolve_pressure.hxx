@@ -95,6 +95,8 @@ private:
   bool low_p_diffuse_perp; ///< Add artificial cross-field diffusion at low electron pressure?
 
   Field3D kappa_par; ///< Parallel heat conduction coefficient
+  BoutReal core_kappa_factor;   ///< Scaling factor on first core ring conduction
+  int core_kappa_scale_rings;   ///< Number of rings to scale conduction by core_kappa_factor
 
   Field3D source, final_source; ///< External pressure source
   Field3D Sp;     ///< Total pressure source
