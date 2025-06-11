@@ -115,7 +115,12 @@ private:
 
   bool numerical_viscous_heating; ///< Include heating due to numerical viscosity?
   bool fix_momentum_boundary_flux; ///< Fix momentum flux to boundary condition?
-  Field3D Sp_nvh; ///< Pressure source due to artificial viscosity
+
+  // Equation terms
+  Field3D Sp_nvh;       ///< Viscous heating due to lax flux numerical viscosity
+  Field3D Sp_pardiv_pv; ///< Pressure advection
+  Field3D Sp_vgradp;    ///< Compression
+  Field3D Sp_cond;      ///< Conduction
 };
 
 namespace {

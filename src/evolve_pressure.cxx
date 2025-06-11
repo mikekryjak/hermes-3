@@ -292,9 +292,11 @@ void EvolvePressure::finally(const Options& state) {
       // Note: A mixed form has been tried (on 1D neon example)
       //       -(4/3)*FV::Div_par(P,V) + (1/3)*(V * Grad_par(P) - P * Div_par(V))
       //       Caused heating of charged species near sheath like p_div_v
-      ddt(P) -= (5. / 3) * FV::Div_par_mod<hermes::Limiter>(P, V, fastest_wave, flow_ylow);
+      Sp_pardiv_pv = -(5. / 3) * FV::Div_par_mod<hermes::Limiter>(P, V, fastest_wave, flow_ylow);
+      ddt(P) += Sp_pardiv_pv;
 
-      ddt(P) += (2. / 3) * V * Grad_par(P);
+      Sp_vgradp = (2. / 3) * V * Grad_par(P);
+      ddt(P) += Sp_vgradp;
     }
     flow_ylow *= 5. / 2; // Energy flow
 
@@ -394,7 +396,8 @@ void EvolvePressure::finally(const Options& state) {
     // Note: Flux through boundary turned off, because sheath heat flux
     // is calculated and removed separately
     flow_ylow_conduction;
-    ddt(P) += (2. / 3) * Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false);
+    Sp_cond = (2. / 3) * Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false);
+    ddt(P) += Sp_cond;
     flow_ylow += flow_ylow_conduction;
 
     if (state.isSection("fields") and state["fields"].isSet("Apar_flutter")) {
@@ -511,6 +514,38 @@ void EvolvePressure::outputVars(Options& state) {
                       {"long_name", name + " heat conduction coefficient"},
                       {"species", name},
                       {"source", "evolve_pressure"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_cond")], Sp_nvh,
+                   {{"time_dimension", "t"},
+                    {"units", "Pa s^-1"},
+                    {"conversion", Pnorm * Omega_ci},
+                    {"standard_name", "pressure source"},
+                    {"long_name", name + " pressure source from conduction"},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
+    }
+
+    if (!p_div_v) {
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_pardiv_pv")], Sp_pardiv_pv,
+                   {{"time_dimension", "t"},
+                    {"units", "Pa s^-1"},
+                    {"conversion", Pnorm * Omega_ci},
+                    {"standard_name", "pressure source"},
+                    {"long_name", name + " pressure source from advection"},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
+
+      set_with_attrs(state[std::string("SP") + name + std::string("_vgradp")], Sp_vgradp,
+                   {{"time_dimension", "t"},
+                    {"units", "Pa s^-1"},
+                    {"conversion", Pnorm * Omega_ci},
+                    {"standard_name", "pressure source"},
+                    {"long_name", name + " pressure source from compression"},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
+
+
     }
     set_with_attrs(state[std::string("T") + name], T,
                    {{"time_dimension", "t"},
