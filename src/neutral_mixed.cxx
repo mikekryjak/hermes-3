@@ -435,6 +435,96 @@ void NeutralMixed::finally(const Options& state) {
   //
   eta_n = AA * (2. / 5) * kappa_n;
 
+  // Set flux limiter factors
+  particle_flux_factor = 1.0;
+  momentum_flux_factor = 1.0;
+  energy_flux_factor = 1.0;
+
+  if (flux_limit) {
+    // Apply perpendicular flux limiters
+    // Note: Fluxes calculated here are cell centre, rather than cell edge
+
+    // Cross-field velocity
+    Vector3D v_perp = -Dnn * Grad_perp(logPnlim);
+
+    // Parallel velocity
+    // TODO: Remove later if still not used
+    Vector3D v_par;
+    auto* coord = mesh->getCoordinates();
+    v_par.covariant = true;
+    v_par.x = 0;
+    v_par.y = Vn * (coord->J * coord->Bxy);
+    v_par.z = 0;
+
+    // Particle flux reduction factor
+    if (particle_flux_limiter) {
+      // Only perpendicular velocity - parallel transport not counted towards limiter
+      Vector3D v_total = v_perp;
+      Field3D v_abs = sqrt(v_total * v_total); // |v dot v|
+
+      // Magnitude of the particle flux
+      Field3D particle_flux_abs = Nnlim * v_abs;
+
+      // Normalised particle flux limit
+      Field3D particle_limit = Nnlim * 0.25 * sqrt(8 * Tnlim / (PI * AA));
+  
+      particle_flux_factor = pow(1. + pow(particle_flux_abs / (flux_limit_alpha * particle_limit),
+                                          flux_limit_gamma),
+                                -1./flux_limit_gamma);
+
+      // Kappa and eta are calculated from D, so they must be updated now that we limited D
+      // However this seems to significantly slow the code down!
+      // kappa_n *= particle_flux_factor;
+      // eta_n *= particle_flux_factor;
+
+    } else {
+      particle_flux_factor = 1.0;
+    }
+
+    if ((momentum_flux_limiter) and (neutral_viscosity)) {
+      // Flux of parallel momentum
+      // Note: The perpendicular advection of momentum is scaled by the particle flux factor.
+      //       The perpendicular diffusion of momentum (viscosity) is scaled by the momentum flux factor.
+      //       Parallel transport is not touched.
+      Vector3D momentum_flux = -eta_n * Grad_perp(Vn);
+      Field3D momentum_flux_abs = sqrt(momentum_flux * momentum_flux);
+      Field3D momentum_limit = Pnlim;
+
+      momentum_flux_factor = pow(1. + pow(momentum_flux_abs / (mom_flux_limit_alpha * momentum_limit),
+                                          flux_limit_gamma),
+                                -1./flux_limit_gamma);
+    } else {
+      momentum_flux_factor = 1.0;
+    }
+
+    if (heat_flux_limiter) {
+      // Apply limiter to flux of heat
+      // Note:
+      //  - Convection limited by particle flux limiter
+      //  - Conduction limited by heat flux limiter
+      //  - Heat flux limiter calculated only from conduction transport
+      Vector3D heat_flux = - kappa_n * Grad_perp(Tn);
+        
+
+      Field3D heat_flux_abs = sqrt(heat_flux * heat_flux);
+
+      Field3D heat_limit = Pnlim * sqrt(2. * Tnlim / (PI * AA));
+
+      energy_flux_factor = pow(1. + pow(heat_flux_abs / (heat_flux_limit_alpha * heat_limit),
+                                      flux_limit_gamma),
+                              -1./flux_limit_gamma);
+    } else {
+      energy_flux_factor = 1.0;
+    }
+
+    // Communicate guard cells and apply boundary conditions
+    // because the flux factors will be differentiated
+    mesh->communicate(particle_flux_factor, momentum_flux_factor, energy_flux_factor);
+    particle_flux_factor.applyBoundary("neumann");
+    momentum_flux_factor.applyBoundary("neumann");
+    energy_flux_factor.applyBoundary("neumann");
+  }
+
   /////////////////////////////////////////////////////
   // Neutral density
   TRACE("Neutral density");
@@ -442,7 +532,7 @@ void NeutralMixed::finally(const Options& state) {
   ddt(Nn) =
     - FV::Div_par_mod<ParLimiter>(Nn, Vn, sound_speed, pf_adv_par_ylow); // Parallel advection
 
-  ddt(Nn) += Div_a_Grad_perp_flows(DnnNn, logPnlim,
+  ddt(Nn) += Div_a_Grad_perp_flows(DnnNn * particle_flux_factor, logPnlim,
                                    pf_adv_perp_xlow,
                                    pf_adv_perp_ylow);    // Perpendicular advection
 
@@ -460,8 +550,9 @@ void NeutralMixed::finally(const Options& state) {
                     Pn, Vn, sound_speed, ef_adv_par_ylow)
             + (2. / 3) * Vn * Grad_par(Pn)                  // Work done
             + (5. / 3) * Div_a_Grad_perp_flows(             // Perpendicular advection
-                    DnnPn, logPnlim,
-                    ef_adv_perp_xlow, ef_adv_perp_ylow)  
+                    DnnPn * particle_flux_factor, logPnlim,
+                    ef_adv_perp_xlow, 
+                    ef_adv_perp_ylow)  
      ;
 
   // The factor here is 5/2 as we're advecting internal energy and pressure.
@@ -471,8 +562,9 @@ void NeutralMixed::finally(const Options& state) {
 
   if (neutral_conduction) {
     ddt(Pn) += (2. / 3) * Div_a_Grad_perp_flows(
-                    kappa_n, Tn,                            // Perpendicular conduction
-                    ef_cond_perp_xlow, ef_cond_perp_ylow)
+                    kappa_n * energy_flux_factor, Tn,                            // Perpendicular conduction
+                    ef_cond_perp_xlow, 
+                    ef_cond_perp_ylow)
 
             + (2. / 3) * Div_par_K_Grad_par_mod(kappa_n, Tn,           // Parallel conduction 
                       ef_cond_par_ylow,        
@@ -497,12 +589,12 @@ void NeutralMixed::finally(const Options& state) {
     TRACE("Neutral momentum");
 
     ddt(NVn) =
-        -AA * FV::Div_par_fvv<ParLimiter>(             // Momentum flow
+        -AA * FV::Div_par_fvv<ParLimiter>(             // Parallel advection
               Nnlim, Vn, sound_speed)                  
 
         - Grad_par(Pn)                                 // Pressure gradient
         
-        + Div_a_Grad_perp_flows(DnnNVn, logPnlim,
+        + Div_a_Grad_perp_flows(DnnNVn * particle_flux_factor, logPnlim,
                                      mf_adv_perp_xlow,
                                      mf_adv_perp_ylow) // Perpendicular advection
       ;
@@ -518,7 +610,7 @@ void NeutralMixed::finally(const Options& state) {
       // eta_n = (2. / 5) * kappa_n;
 
       Field3D viscosity_source = AA * Div_a_Grad_perp_flows(
-                                eta_n, Vn,              // Perpendicular viscosity
+                                eta_n * momentum_flux_factor, Vn,              // Perpendicular viscosity
                                 mf_visc_perp_xlow,
                                 mf_visc_perp_ylow)    
                               
@@ -740,6 +832,35 @@ void NeutralMixed::outputVars(Options& state) {
                     {"species", name},
                     {"source", "evolve_density"}});
     }
+    
+    //// Perpendicular flow diagnostics
+
+    // Flux limiter factors
+    set_with_attrs(state[fmt::format("flim{}_pf_perp", name)], particle_flux_factor,
+                   {{"time_dimension", "t"},
+                    {"units", ""},
+                    {"conversion", 1.0},
+                    {"standard_name", "flux limiter factor"},
+                    {"long_name", name + " particle flux factor"},
+                    {"species", name},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[fmt::format("flim{}_mf_perp", name)], momentum_flux_factor,
+                   {{"time_dimension", "t"},
+                    {"units", ""},
+                    {"conversion", 1.0},
+                    {"standard_name", "flux limiter factor"},
+                    {"long_name", name + " momentum flux factor"},
+                    {"species", name},
+                    {"source", "neutral_mixed"}});
+
+    set_with_attrs(state[fmt::format("flim{}_ef_perp", name)], energy_flux_factor,
+                   {{"time_dimension", "t"},
+                    {"units", ""},
+                    {"conversion", 1.0},
+                    {"standard_name", "flux limiter factor"},
+                    {"long_name", name + " energy flux factor"},
+                    {"species", name},
+                    {"source", "neutral_mixed"}});
 
     // Momentum flows due to advection
     if (mf_adv_perp_xlow.isAllocated()) {
