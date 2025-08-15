@@ -81,10 +81,33 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .doc("Enable stabilising lax flux?")
                      .withDefault<bool>(true);
 
-  flux_limit =
-      options["flux_limit"]
-          .doc("Limit diffusive fluxes to fraction of thermal speed. <0 means off.")
-          .withDefault(0.2);
+  flux_limit = options["flux_limit"]
+    .doc("Use isotropic flux limiters?")
+    .withDefault(true);
+
+  particle_flux_limiter = options["particle_flux_limiter"]
+    .doc("Enable particle flux limiter?")
+    .withDefault(true);
+
+  heat_flux_limiter = options["heat_flux_limiter"]
+    .doc("Enable heat flux limiter?")
+    .withDefault(true);
+
+  momentum_flux_limiter = options["momentum_flux_limiter"]
+    .doc("Enable momentum flux limiter?")
+    .withDefault(true);
+
+  flux_limit_alpha = options["flux_limit_alpha"]
+    .doc("Scale flux limits")
+    .withDefault(1.0);
+
+  heat_flux_limit_alpha = options["heat_flux_limit_alpha"]
+    .doc("Scale heat flux limiter")
+    .withDefault(flux_limit_alpha);
+
+  mom_flux_limit_alpha = options["momentum_flux_limit_alpha"]
+    .doc("Scale momentum flux limiter")
+    .withDefault(flux_limit_alpha);
 
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
@@ -360,14 +383,6 @@ void NeutralMixed::finally(const Options& state) {
     Dnn = (Tnlim / AA) / Rnn;
   }
 
-  if (flux_limit > 0.0) {
-    // Apply flux limit to diffusion,
-    // using the local thermal speed and pressure gradient magnitude
-    Field3D Dmax = flux_limit * sqrt(Tnlim / AA) / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
-    BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
-      Dnn[i] = Dnn[i] * Dmax[i] / (Dnn[i] + Dmax[i]);
-    }
-  }
 
   if (diffusion_limit > 0.0) {
     // Impose an upper limit on the diffusion coefficient
