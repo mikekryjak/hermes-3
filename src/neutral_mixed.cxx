@@ -81,6 +81,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .doc("Enable stabilising lax flux?")
                      .withDefault<bool>(true);
 
+  maximum_mfp = options["maximum_mfp"]
+    .doc("Optional maximum mean free path in [m] for diffusive processes.")
+    .withDefault(1.0);
+
   flux_limit = options["flux_limit"]
     .doc("Use isotropic flux limiters?")
     .withDefault(true);
@@ -97,17 +101,21 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .doc("Enable momentum flux limiter?")
     .withDefault(true);
 
-  flux_limit_alpha = options["flux_limit_alpha"]
-    .doc("Scale flux limits")
+  particle_flux_limit_alpha = options["particle_flux_limit_alpha"]
+    .doc("Scale particle flux limiter")
     .withDefault(1.0);
 
   heat_flux_limit_alpha = options["heat_flux_limit_alpha"]
-    .doc("Scale heat flux limiter")
-    .withDefault(flux_limit_alpha);
+    .doc("Scale heat flux limiter. Default to same as particle flux limiter")
+    .withDefault(particle_flux_limit_alpha);
 
-  mom_flux_limit_alpha = options["momentum_flux_limit_alpha"]
-    .doc("Scale momentum flux limiter")
-    .withDefault(flux_limit_alpha);
+  momentum_flux_limit_alpha = options["momentum_flux_limit_alpha"]
+    .doc("Scale momentum flux limiter. Default to same as particle flux limiter")
+    .withDefault(particle_flux_limit_alpha);
+
+  flux_limit_gamma = options["flux_limit_gamma"]
+    .doc("Higher values increase sharpness of flux limiting")
+    .withDefault(2.0);
 
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
@@ -308,12 +316,6 @@ void NeutralMixed::finally(const Options& state) {
 
   Field3D Tnlim = softFloor(Tn, temperature_floor);
 
-  BoutReal neutral_lmax =
-    0.1 / get<BoutReal>(state["units"]["meters"]); // Normalised length
-
-  Field3D Rnn =
-    sqrt(Tnlim / AA) / neutral_lmax; // Neutral-neutral collisions [normalised frequency]
-
   if (localstate.isSet("collision_frequency")) {
 
     // Collisionality
@@ -376,11 +378,14 @@ void NeutralMixed::finally(const Options& state) {
       nu += GET_VALUE(Field3D, localstate["collision_frequencies"][collision_name]);
     }
 
-
+    // Diffusion is limited by the assumption of a maximum neutral MFP,
+    // e.g. due to the machine having a finite size (let's say 1m)
+    nu_mfp = sqrt(Tnlim / AA) / maximum_mfp; //Pseudo-collisionality to represent max MFP
+      
     // Dnn = Vth^2 / sigma
-    Dnn = (Tnlim / AA) / (nu + Rnn);
+    Dnn = (Tnlim / AA) / (nu + nu_mfp);
   } else {
-    Dnn = (Tnlim / AA) / Rnn;
+    Dnn = (Tnlim / AA) / nu_mfp;
   }
 
 
@@ -483,7 +488,7 @@ void NeutralMixed::finally(const Options& state) {
       // Normalised particle flux limit
       Field3D particle_limit = Nnlim * 0.25 * sqrt(8 * Tnlim / (PI * AA));
   
-      particle_flux_factor = pow(1. + pow(particle_flux_abs / (flux_limit_alpha * particle_limit),
+      particle_flux_factor = pow(1. + pow(particle_flux_abs / (particle_flux_limit_alpha * particle_limit),
                                           flux_limit_gamma),
                                 -1./flux_limit_gamma);
 
@@ -505,7 +510,7 @@ void NeutralMixed::finally(const Options& state) {
       Field3D momentum_flux_abs = sqrt(momentum_flux * momentum_flux);
       Field3D momentum_limit = Pnlim;
 
-      momentum_flux_factor = pow(1. + pow(momentum_flux_abs / (mom_flux_limit_alpha * momentum_limit),
+      momentum_flux_factor = pow(1. + pow(momentum_flux_abs / (momentum_flux_limit_alpha * momentum_limit),
                                           flux_limit_gamma),
                                 -1./flux_limit_gamma);
     } else {

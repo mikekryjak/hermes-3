@@ -49,11 +49,12 @@ private:
 
   BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
   BoutReal flux_limit; ///< Diffusive flux limit
-  BoutReal flux_limit_alpha, heat_flux_limit_alpha, mom_flux_limit_alpha;  ///< Limiter setting
+  BoutReal particle_flux_limit_alpha, heat_flux_limit_alpha, momentum_flux_limit_alpha;  ///< Limiter setting
   BoutReal flux_limit_gamma;  ///< Limiter smoothness
 
   bool particle_flux_limiter, heat_flux_limiter, momentum_flux_limiter; ///< Which limiters to impose
   BoutReal maximum_mfp; ///< Maximum mean free path for diffusion. 0.1 by default, -1 is off.
+  Field3D nu_mfp; ///< corresponding pseudo-collisionality
   
   Field3D particle_flux_factor; ///< Particle flux scaling factor
   Field3D momentum_flux_factor;
