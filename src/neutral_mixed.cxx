@@ -83,7 +83,8 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
 
   maximum_mfp = options["maximum_mfp"]
     .doc("Optional maximum mean free path in [m] for diffusive processes.")
-    .withDefault(1.0);
+    .withDefault(0.1) / get<BoutReal>(alloptions["units"]["meters"]);
+  // TODO: Once performance fixed, increase to 1.0m?
 
   flux_limit = options["flux_limit"]
     .doc("Use isotropic flux limiters?")
