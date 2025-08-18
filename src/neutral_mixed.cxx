@@ -87,7 +87,7 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   // TODO: Once performance fixed, increase to 1.0m?
 
   flux_limit = options["flux_limit"]
-    .doc("Use isotropic flux limiters?")
+    .doc("Use flux limiters?")
     .withDefault(true);
 
   particle_flux_limiter = options["particle_flux_limiter"]
@@ -459,91 +459,112 @@ void NeutralMixed::finally(const Options& state) {
   // Set flux limiter factors
   particle_flux_factor = 1.0;
   momentum_flux_factor = 1.0;
-  energy_flux_factor = 1.0;
+  heat_flux_factor = 1.0;
+
 
   if (flux_limit) {
-    // Apply perpendicular flux limiters
-    // Note: Fluxes calculated here are cell centre, rather than cell edge
 
-    // Cross-field velocity
-    Vector3D v_perp = -Dnn * Grad_perp(logPnlim);
+    if (legacy_limiter) {
+      // Apply flux limit to diffusion,
+      // using the local thermal speed and pressure gradient magnitude
+      // FIXME: This follows the original in being wrong - nu is not included, only nu_mfp!
+      Field3D Dmax = flux_limit * sqrt(Tnlim / AA) / (abs(Grad(logPnlim)) + 1. / nu_mfp);
+      BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
+        particle_flux_factor = Dmax[i] / (Dnn[i] + Dmax[i]);
 
-    // Parallel velocity
-    // TODO: Remove later if still not used
-    Vector3D v_par;
-    auto* coord = mesh->getCoordinates();
-    v_par.covariant = true;
-    v_par.x = 0;
-    v_par.y = Vn * (coord->J * coord->Bxy);
-    v_par.z = 0;
+        if (momentum_flux_limiter) {
+          momentum_flux_factor = particle_flux_factor;
+        } 
 
-    // Particle flux reduction factor
-    if (particle_flux_limiter) {
-      // Only perpendicular velocity - parallel transport not counted towards limiter
-      Vector3D v_total = v_perp;
-      Field3D v_abs = sqrt(v_total * v_total); // |v dot v|
+        if (heat_flux_limiter) {
+          heat_flux_factor = particle_flux_factor;
+        }
+      }
 
-      // Magnitude of the particle flux
-      Field3D particle_flux_abs = Nnlim * v_abs;
+    } else {
 
-      // Normalised particle flux limit
-      Field3D particle_limit = Nnlim * 0.25 * sqrt(8 * Tnlim / (PI * AA));
-  
-      particle_flux_factor = pow(1. + pow(particle_flux_abs / (particle_flux_limit_alpha * particle_limit),
-                                          flux_limit_gamma),
+      // Apply perpendicular flux limiters
+      // Note: Fluxes calculated here are cell centre, rather than cell edge
+
+      // Cross-field velocity
+      Vector3D v_perp = -Dnn * Grad_perp(logPnlim);
+
+      // Parallel velocity
+      // TODO: Remove later if still not used
+      Vector3D v_par;
+      auto* coord = mesh->getCoordinates();
+      v_par.covariant = true;
+      v_par.x = 0;
+      v_par.y = Vn * (coord->J * coord->Bxy);
+      v_par.z = 0;
+
+      /////////////////////////////////////////////////
+      // Particle flux limiter
+      if (particle_flux_limiter) {
+        // Only perpendicular velocity - parallel transport not counted towards limiter
+        Vector3D v_total = v_perp;
+        Field3D v_abs = sqrt(v_total * v_total); // |v dot v|
+
+        // Magnitude of the particle flux
+        Field3D particle_flux_abs = Nnlim * v_abs;
+
+        // Normalised particle flux limit
+        Field3D particle_limit = Nnlim * 0.25 * sqrt(8 * Tnlim / (PI * AA));
+    
+        particle_flux_factor = pow(1. + pow(particle_flux_abs / (particle_flux_limit_alpha * particle_limit),
+                                            flux_limit_gamma),
+                                  -1./flux_limit_gamma);
+
+        // Kappa and eta are calculated from D, so they must be updated now that we limited D
+        // However this seems to significantly slow the code down!
+        // kappa_n *= particle_flux_factor;
+        // eta_n *= particle_flux_factor;
+
+      } 
+
+      /////////////////////////////////////////////////
+      // Momentum flux limiter
+      if ((momentum_flux_limiter) and (neutral_viscosity)) {
+        // Flux of parallel momentum
+        // Note: The perpendicular advection of momentum is scaled by the particle flux factor.
+        //       The perpendicular diffusion of momentum (viscosity) is scaled by the momentum flux factor.
+        //       Parallel transport is not touched.
+        Vector3D momentum_flux = -eta_n * Grad_perp(Vn);
+        Field3D momentum_flux_abs = sqrt(momentum_flux * momentum_flux);
+        Field3D momentum_limit = Pnlim;
+
+        momentum_flux_factor = pow(1. + pow(momentum_flux_abs / (momentum_flux_limit_alpha * momentum_limit),
+                                            flux_limit_gamma),
+                                  -1./flux_limit_gamma);
+      } 
+
+      /////////////////////////////////////////////////
+      // Momentum flux limiter
+      if (heat_flux_limiter) {
+        // Apply limiter to flux of heat
+        // Note:
+        //  - Convection limited by particle flux limiter
+        //  - Conduction limited by heat flux limiter
+        //  - Heat flux limiter calculated only from conduction transport
+        Vector3D heat_flux = - kappa_n * Grad_perp(Tn);
+          
+
+        Field3D heat_flux_abs = sqrt(heat_flux * heat_flux);
+
+        Field3D heat_limit = Pnlim * sqrt(2. * Tnlim / (PI * AA));
+
+        heat_flux_factor = pow(1. + pow(heat_flux_abs / (heat_flux_limit_alpha * heat_limit),
+                                        flux_limit_gamma),
                                 -1./flux_limit_gamma);
-
-      // Kappa and eta are calculated from D, so they must be updated now that we limited D
-      // However this seems to significantly slow the code down!
-      // kappa_n *= particle_flux_factor;
-      // eta_n *= particle_flux_factor;
-
-    } else {
-      particle_flux_factor = 1.0;
-    }
-
-    if ((momentum_flux_limiter) and (neutral_viscosity)) {
-      // Flux of parallel momentum
-      // Note: The perpendicular advection of momentum is scaled by the particle flux factor.
-      //       The perpendicular diffusion of momentum (viscosity) is scaled by the momentum flux factor.
-      //       Parallel transport is not touched.
-      Vector3D momentum_flux = -eta_n * Grad_perp(Vn);
-      Field3D momentum_flux_abs = sqrt(momentum_flux * momentum_flux);
-      Field3D momentum_limit = Pnlim;
-
-      momentum_flux_factor = pow(1. + pow(momentum_flux_abs / (momentum_flux_limit_alpha * momentum_limit),
-                                          flux_limit_gamma),
-                                -1./flux_limit_gamma);
-    } else {
-      momentum_flux_factor = 1.0;
-    }
-
-    if (heat_flux_limiter) {
-      // Apply limiter to flux of heat
-      // Note:
-      //  - Convection limited by particle flux limiter
-      //  - Conduction limited by heat flux limiter
-      //  - Heat flux limiter calculated only from conduction transport
-      Vector3D heat_flux = - kappa_n * Grad_perp(Tn);
-        
-
-      Field3D heat_flux_abs = sqrt(heat_flux * heat_flux);
-
-      Field3D heat_limit = Pnlim * sqrt(2. * Tnlim / (PI * AA));
-
-      energy_flux_factor = pow(1. + pow(heat_flux_abs / (heat_flux_limit_alpha * heat_limit),
-                                      flux_limit_gamma),
-                              -1./flux_limit_gamma);
-    } else {
-      energy_flux_factor = 1.0;
+      } 
     }
 
     // Communicate guard cells and apply boundary conditions
     // because the flux factors will be differentiated
-    mesh->communicate(particle_flux_factor, momentum_flux_factor, energy_flux_factor);
+    mesh->communicate(particle_flux_factor, momentum_flux_factor, heat_flux_factor);
     particle_flux_factor.applyBoundary("neumann");
     momentum_flux_factor.applyBoundary("neumann");
-    energy_flux_factor.applyBoundary("neumann");
+    heat_flux_factor.applyBoundary("neumann");
   }
 
   /////////////////////////////////////////////////////
@@ -583,7 +604,7 @@ void NeutralMixed::finally(const Options& state) {
 
   if (neutral_conduction) {
     ddt(Pn) += (2. / 3) * Div_a_Grad_perp_flows(
-                    kappa_n * energy_flux_factor, Tn,                            // Perpendicular conduction
+                    kappa_n * heat_flux_factor, Tn,                            // Perpendicular conduction
                     ef_cond_perp_xlow, 
                     ef_cond_perp_ylow)
 
@@ -874,7 +895,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"species", name},
                     {"source", "neutral_mixed"}});
 
-    set_with_attrs(state[fmt::format("flim{}_ef_perp", name)], energy_flux_factor,
+    set_with_attrs(state[fmt::format("flim{}_ef_perp", name)], heat_flux_factor,
                    {{"time_dimension", "t"},
                     {"units", ""},
                     {"conversion", 1.0},
