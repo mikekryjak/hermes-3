@@ -90,6 +90,10 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
     .doc("Use flux limiters?")
     .withDefault(true);
 
+  legacy_limiter = options["legacy_limiter"]
+    .doc("Use old style flux limiter?")
+    .withDefault(true);
+
   particle_flux_limiter = options["particle_flux_limiter"]
     .doc("Enable particle flux limiter?")
     .withDefault(true);
@@ -461,14 +465,18 @@ void NeutralMixed::finally(const Options& state) {
   momentum_flux_factor = 1.0;
   heat_flux_factor = 1.0;
 
+  
+
 
   if (flux_limit) {
 
     if (legacy_limiter) {
+
       // Apply flux limit to diffusion,
       // using the local thermal speed and pressure gradient magnitude
       // FIXME: This follows the original in being wrong - nu is not included, only nu_mfp!
-      Field3D Dmax = flux_limit * sqrt(Tnlim / AA) / (abs(Grad(logPnlim)) + 1. / nu_mfp);
+      Dmax = particle_flux_limit_alpha * sqrt(Tnlim / AA) / (abs(Grad_perp(logPnlim)) + 1. / nu_mfp);
+
       BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
         particle_flux_factor = Dmax[i] / (Dnn[i] + Dmax[i]);
 
@@ -487,7 +495,13 @@ void NeutralMixed::finally(const Options& state) {
       // Note: Fluxes calculated here are cell centre, rather than cell edge
 
       // Cross-field velocity
+      grad_perp_logPnlim_x = Grad_perp(logPnlim).x;
+      grad_logPnlim_x = Grad(logPnlim).x;
+
+      Dnn_check = Dnn;
       Vector3D v_perp = -Dnn * Grad_perp(logPnlim);
+      v_perp_x = v_perp.x;
+      v_perp_y = v_perp.y;
 
       // Parallel velocity
       // TODO: Remove later if still not used
@@ -503,7 +517,7 @@ void NeutralMixed::finally(const Options& state) {
       if (particle_flux_limiter) {
         // Only perpendicular velocity - parallel transport not counted towards limiter
         Vector3D v_total = v_perp;
-        Field3D v_abs = sqrt(v_total * v_total); // |v dot v|
+        v_abs = sqrt(v_total * v_total); // |v dot v|
 
         // Magnitude of the particle flux
         Field3D particle_flux_abs = Nnlim * v_abs;
@@ -803,6 +817,27 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "temperature"},
                     {"long_name", name + " temperature"},
                     {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("grad_perp_logPnlim_x_") + name], grad_perp_logPnlim_x,
+                   {{"time_dimension", "t"},
+                    {"units", "m ^-1"},
+                    {"conversion", 1 / rho_s0},
+                    {"standard_name", "gradient"},
+                    {"long_name", name + " logPnlim gradient"},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("K") + name + "_diff"], nu,
+                   {{"time_dimension", "t"},
+                    {"units", "s ^-1"},
+                    {"conversion", Omega_ci},
+                    {"standard_name", "collision frequency"},
+                    {"long_name", name + " collision frequency for calculation of Dnn (excl. nu_mfp)"},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("K") + name + "_diff_mfp"], nu_mfp,
+                   {{"time_dimension", "t"},
+                    {"units", "s ^-1"},
+                    {"conversion", Omega_ci},
+                    {"standard_name", "collision frequency"},
+                    {"long_name", name + " pseudo collision frequency for max neutral MFP"},
+                    {"source", "neutral_mixed"}});
     set_with_attrs(state[std::string("Dnn") + name], Dnn,
                    {{"time_dimension", "t"},
                     {"units", "m^2/s"},
@@ -810,6 +845,43 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " diffusion coefficient"},
                     {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("Dnn") + name + "_check"], Dnn_check,
+                   {{"time_dimension", "t"},
+                    {"units", "m^2/s"},
+                    {"conversion", Cs0 * Cs0 / Omega_ci},
+                    {"standard_name", "diffusion coefficient CHECK"},
+                    {"long_name", name + " diffusion coefficient CHECK"},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("V") + name + "_perp_x"], v_perp_x,
+                   {{"time_dimension", "t"},
+                    {"units", "m / s"},
+                    {"conversion", Cs0},
+                    {"standard_name", "velocity"},
+                    {"long_name", name + " radial component of perpendicular velocity"},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("V") + name + "_perp_y"], v_perp_y,
+                   {{"time_dimension", "t"},
+                    {"units", "m / s"},
+                    {"conversion", Cs0},
+                    {"standard_name", "velocity"},
+                    {"long_name", name + " poloidal component of perpendicular velocity"},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[std::string("V") + name + "_perp_abs"], v_abs,
+                   {{"time_dimension", "t"},
+                    {"units", "m / s"},
+                    {"conversion", Cs0},
+                    {"standard_name", "velocity"},
+                    {"long_name", name + " magnitude of perpendicular velocity"},
+                    {"source", "neutral_mixed"}});
+    if (Dmax.isAllocated()) {
+        set_with_attrs(state[std::string("Dmax") + name], Dmax,
+                    {{"time_dimension", "t"},
+                      {"units", "m^2/s"},
+                      {"conversion", Cs0 * Cs0 / Omega_ci},
+                      {"standard_name", "diffusion coefficient"},
+                      {"long_name", name + "maximum diffusion coefficient (legacy limiter)"},
+                      {"source", "neutral_mixed"}});
+    }
     set_with_attrs(state[std::string("SN") + name], Sn,
                    {{"time_dimension", "t"},
                     {"units", "m^-3 s^-1"},
@@ -886,7 +958,7 @@ void NeutralMixed::outputVars(Options& state) {
     //// Perpendicular flow diagnostics
 
     // Flux limiter factors
-    set_with_attrs(state[fmt::format("flim{}_pf_perp", name)], particle_flux_factor,
+    set_with_attrs(state[fmt::format("fluxlim{}_pf_perp", name)], particle_flux_factor,
                    {{"time_dimension", "t"},
                     {"units", ""},
                     {"conversion", 1.0},
@@ -894,7 +966,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"long_name", name + " particle flux factor"},
                     {"species", name},
                     {"source", "neutral_mixed"}});
-    set_with_attrs(state[fmt::format("flim{}_mf_perp", name)], momentum_flux_factor,
+    set_with_attrs(state[fmt::format("fluxlim{}_mf_perp", name)], momentum_flux_factor,
                    {{"time_dimension", "t"},
                     {"units", ""},
                     {"conversion", 1.0},
@@ -903,7 +975,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"species", name},
                     {"source", "neutral_mixed"}});
 
-    set_with_attrs(state[fmt::format("flim{}_ef_perp", name)], heat_flux_factor,
+    set_with_attrs(state[fmt::format("fluxlim{}_ef_perp", name)], heat_flux_factor,
                    {{"time_dimension", "t"},
                     {"units", ""},
                     {"conversion", 1.0},

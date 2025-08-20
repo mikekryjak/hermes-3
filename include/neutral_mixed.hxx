@@ -45,7 +45,11 @@ private:
   std::string diffusion_collisions_mode;  ///< Collision selection, either afn or multispecies
   Field3D nu; ///< Collisionality to use for diffusion
   Field3D Dnn; ///< Diffusion coefficient
+  Field3D Dnn_check; ///< TODO: delete
+  Field3D Dmax; ///< Maximum Dnn (legacy flux limiter)
   Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
+  Field3D grad_perp_logPnlim_x, grad_logPnlim_x;
+  Field3D v_perp_x, v_perp_y, v_abs;
 
   BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
  
