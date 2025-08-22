@@ -45,9 +45,26 @@ private:
   std::string diffusion_collisions_mode;  ///< Collision selection, either afn or multispecies
   Field3D nu; ///< Collisionality to use for diffusion
   Field3D Dnn; ///< Diffusion coefficient
+  Field3D Dnn_check; ///< TODO: delete
+  Field3D Dmax; ///< Maximum Dnn (legacy flux limiter)
   Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
-  BoutReal flux_limit; ///< Diffusive flux limit
+  Field3D grad_perp_logPnlim_x, grad_logPnlim_x;
+  Field3D v_perp_x, v_perp_y, v_abs;
+
   BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
+ 
+  BoutReal particle_flux_limit_alpha, heat_flux_limit_alpha, momentum_flux_limit_alpha;  ///< Limiter setting
+  BoutReal flux_limit_gamma;  ///< Limiter smoothness
+
+  bool particle_flux_limiter, heat_flux_limiter, momentum_flux_limiter; ///< Which limiters to impose
+  bool flux_limit;    ///< use limiters at all?
+  bool legacy_limiter;  ///< Old inconsistent limiter
+  BoutReal maximum_mfp; ///< Maximum mean free path for diffusion. 0.1 by default, -1 is off.
+  Field3D nu_mfp; ///< corresponding pseudo-collisionality
+  
+  Field3D particle_flux_factor; ///< Particle flux scaling factor
+  Field3D momentum_flux_factor;
+  Field3D heat_flux_factor;
 
   bool sheath_ydown, sheath_yup;
 
