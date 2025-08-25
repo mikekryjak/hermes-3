@@ -119,9 +119,9 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                           .doc("Include neutral gas heat conduction?")
                           .withDefault<bool>(true);
 
-  maximum_mfp = options["maximum_mfp"]
+  neutral_lmax = options["neutral_lmax"]
     .doc("Optional maximum mean free path in [m] for diffusive processes. < 0 is off")
-    .withDefault(0.1);
+    .withDefault(0.1 / meters);
 
   perp_pressure_form = options["perp_pressure_form"]
     .doc("Form of perpendicular pressure advection. " 
@@ -361,8 +361,6 @@ void NeutralMixed::finally(const Options& state) {
   // Calculate cross-field diffusion from collision frequency
   //
   //
-    BoutReal neutral_lmax =
-      0.1 / get<BoutReal>(state["units"]["meters"]); // Normalised length
 
   Field3D Rnn = sqrt(Tn / AA) / neutral_lmax; // Neutral-neutral collisions [normalised frequency]
 
