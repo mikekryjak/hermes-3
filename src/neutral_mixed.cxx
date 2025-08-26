@@ -121,7 +121,7 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
 
   neutral_lmax = options["neutral_lmax"]
     .doc("Optional maximum mean free path in [m] for diffusive processes. < 0 is off")
-    .withDefault(0.1 / meters);
+    .withDefault(0.1) / meters;
 
   perp_pressure_form = options["perp_pressure_form"]
     .doc("Form of perpendicular pressure advection. " 
@@ -362,7 +362,7 @@ void NeutralMixed::finally(const Options& state) {
   //
   //
 
-  Field3D Rnn = sqrt(Tn / AA) / neutral_lmax; // Neutral-neutral collisions [normalised frequency]
+  Rnn = sqrt(Tn / AA) / neutral_lmax; // Neutral-neutral collisions [normalised frequency]
 
   if (localstate.isSet("collision_frequency")) {
 
@@ -917,6 +917,14 @@ void NeutralMixed::outputVars(Options& state) {
                     {"conversion", Cs0 * Cs0 / Omega_ci},
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " diffusion coefficient"},
+                    {"source", "neutral_mixed"}});
+
+    set_with_attrs(state[std::string("Rnn")], Rnn,
+                   {{"time_dimension", "t"},
+                    {"units", "s^-1"},
+                    {"conversion", Omega_ci},
+                    {"standard_name", "max mfp pseudo collisionality"},
+                    {"long_name", name + " max mfp pseudo collisionality"},
                     {"source", "neutral_mixed"}});
 
     set_with_attrs(state[std::string("eta_") + name], eta_n,

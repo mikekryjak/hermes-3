@@ -46,6 +46,7 @@ private:
   Field3D nu; ///< Collisionality to use for diffusion
   Field3D Dnn; ///< Diffusion coefficient
   Field3D DnnNn, DnnPn, DnnNVn, DnnTn; ///< Used for operators
+  Field3D Rnn;
   Field3D eta_n; ///< Viscosity
   Field3D kappa_n; ///< Thermal conductivity
 
