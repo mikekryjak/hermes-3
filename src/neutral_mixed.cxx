@@ -292,7 +292,7 @@ void NeutralMixed::finally(const Options& state) {
   BoutReal neutral_lmax =
     0.1 / get<BoutReal>(state["units"]["meters"]); // Normalised length
 
-  Field3D Rnn =
+  Rnn =
     sqrt(Tnlim / AA) / neutral_lmax; // Neutral-neutral collisions [normalised frequency]
 
   if (localstate.isSet("collision_frequency")) {
@@ -359,18 +359,23 @@ void NeutralMixed::finally(const Options& state) {
 
 
     // Dnn = Vth^2 / sigma
-    Dnn = (Tnlim / AA) / (nu + Rnn);
+    Dnn_unlimited = (Tnlim / AA) / (nu + Rnn);
   } else {
-    Dnn = (Tnlim / AA) / Rnn;
+    Dnn_unlimited = (Tnlim / AA) / Rnn;
   }
+
+  Dnn = emptyFrom(Dnn_unlimited);
+  Dmax = emptyFrom(Dnn_unlimited);
 
   if (flux_limit > 0.0) {
     // Apply flux limit to diffusion,
     // using the local thermal speed and pressure gradient magnitude
-    Field3D Dmax = flux_limit * sqrt(Tnlim / AA) / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
+    Dmax = flux_limit * sqrt(Tnlim / AA) / (abs(Grad_perp(logPnlim)) + 1. / neutral_lmax);
     BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
       Dnn[i] = Dnn[i] * Dmax[i] / (Dnn[i] + Dmax[i]);
     }
+  } else {
+    Dmax = Dnn;
   }
 
   if (diffusion_limit > 0.0) {
@@ -680,6 +685,20 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " diffusion coefficient"},
                     {"source", "neutral_mixed"}});
+    set_with_attrs(state[fmt::format("Dnn{}_unlimited", name)], Dnn_unlimited,
+                   {{"time_dimension", "t"},
+                    {"units", "m^2/s"},
+                    {"conversion", Cs0 * Cs0 / Omega_ci},
+                    {"standard_name", "diffusion coefficient"},
+                    {"long_name", name + " unlimited diffusion coefficient"},
+                    {"source", "neutral_mixed"}});
+    set_with_attrs(state[fmt::format("Dnn{}_max", name)], Dmax,
+                   {{"time_dimension", "t"},
+                    {"units", "m^2/s"},
+                    {"conversion", Cs0 * Cs0 / Omega_ci},
+                    {"standard_name", "diffusion coefficient"},
+                    {"long_name", name + " maximum diffusion coefficient"},
+                    {"source", "neutral_mixed"}});
     set_with_attrs(state[std::string("SN") + name], Sn,
                    {{"time_dimension", "t"},
                     {"units", "m^-3 s^-1"},
@@ -717,6 +736,16 @@ void NeutralMixed::outputVars(Options& state) {
                     {"long_name", name + " pressure source"},
                     {"species", name},
                     {"source", "neutral_mixed"}});
+
+    set_with_attrs(state[std::string("K") + name + std::string("_mfp_pseudo_coll")],
+                     Rnn,
+                     {{"time_dimension", "t"},
+                      {"units", "s-1"},
+                      {"conversion", Omega_ci},
+                      {"standard_name", "collision frequency"},
+                      {"long_name", name + " MFP limit pseudo-collisionality"},
+                      {"species", name},
+                      {"source", "collisions"}});
 
     ///////////////////////////////////////////////////
     // Parallel flow diagnostics

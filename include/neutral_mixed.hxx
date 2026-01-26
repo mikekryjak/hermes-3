@@ -42,9 +42,13 @@ private:
   std::string diffusion_collisions_mode;  ///< Collision selection, either afn or multispecies
   Field3D nu; ///< Collisionality to use for diffusion
   Field3D Dnn; ///< Diffusion coefficient
+  Field3D Dnn_unlimited; ///< Unlimited diffusion coefficient
+  Field3D Dmax; ///< Maximum Dnn
   Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
   BoutReal flux_limit; ///< Diffusive flux limit
   BoutReal diffusion_limit;    ///< Maximum diffusion coefficient
+
+  Field3D Rnn;
 
   bool sheath_ydown, sheath_yup;
 
