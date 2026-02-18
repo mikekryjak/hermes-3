@@ -40,7 +40,6 @@ BoutReal limitFree(BoutReal fm, BoutReal fc) {
 
 RelaxPotential::RelaxPotential(std::string name, Options& alloptions, Solver* solver)
     : Component({readWrite("fields:vorticity"), readWrite("fields:phi")}) {
-  AUTO_TRACE();
 
   solver->add(Vort, "Vort"); // Vorticity evolving
   solver->add(phi1, "phi1"); // Evolving scaled potential ϕ_1 = λ_2 ϕ
@@ -217,7 +216,6 @@ RelaxPotential::RelaxPotential(std::string name, Options& alloptions, Solver* so
 }
 
 void RelaxPotential::transform_impl(GuardedOptions& state) {
-  AUTO_TRACE();
 
   auto allspecies = state["species"];
 
@@ -645,7 +643,6 @@ void RelaxPotential::transform_impl(GuardedOptions& state) {
 }
 
 void RelaxPotential::finally(const Options& state) {
-  AUTO_TRACE();
 
   const Options& allspecies = state["species"];
 
@@ -849,7 +846,6 @@ void RelaxPotential::finally(const Options& state) {
 }
 
 void RelaxPotential::outputVars(Options& state) {
-  AUTO_TRACE();
   // Normalisations
   auto Nnorm = get<BoutReal>(state["Nnorm"]);
   auto Tnorm = get<BoutReal>(state["Tnorm"]);

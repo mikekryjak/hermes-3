@@ -76,7 +76,6 @@ Vector3D Grad_perp_XZ(const Field3D& f) {
 
 Vorticity::Vorticity(std::string name, Options& alloptions, Solver* solver)
     : Component({readWrite("fields:vorticity"), readWrite("fields:phi")}) {
-  AUTO_TRACE();
 
   solver->add(Vort, "Vort");
 
@@ -374,7 +373,6 @@ Field3D Vorticity::calculateDivJdia(Field3D phi, GuardedOptions allspecies) {
 }
 
 void Vorticity::transform_impl(GuardedOptions& state) {
-  AUTO_TRACE();
 
   phi.name = "phi";
   auto fields = state["fields"];
@@ -770,7 +768,6 @@ void Vorticity::transform_impl(GuardedOptions& state) {
 }
 
 void Vorticity::finally(const Options& state) {
-  AUTO_TRACE();
   auto coord = mesh->getCoordinates();
 
   phi = get<Field3D>(state["fields"]["phi"]);
@@ -907,7 +904,6 @@ void Vorticity::finally(const Options& state) {
 }
 
 void Vorticity::outputVars(Options& state) {
-  AUTO_TRACE();
   // Normalisations
   auto Nnorm = get<BoutReal>(state["Nnorm"]);
   auto Tnorm = get<BoutReal>(state["Tnorm"]);

@@ -139,7 +139,6 @@ BraginskiiIonViscosity::BraginskiiIonViscosity(const std::string& name,
 }
 
 void BraginskiiIonViscosity::transform_impl(GuardedOptions& state) {
-  AUTO_TRACE();
 
   GuardedOptions allspecies = state["species"];
 
@@ -385,7 +384,6 @@ void BraginskiiIonViscosity::transform_impl(GuardedOptions& state) {
 }
 
 void BraginskiiIonViscosity::outputVars(Options& state) {
-  AUTO_TRACE();
 
   if (diagnose) {
     // Normalisations

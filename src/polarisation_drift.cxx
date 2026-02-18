@@ -18,7 +18,6 @@ PolarisationDrift::PolarisationDrift(std::string name, Options& alloptions,
                  readIfSet("species:{charged}:pressure", Regions::Interior),
                  readIfSet("fields:{fields}"),
                  readWrite("species:{charged}:{outputs}")}) {
-  AUTO_TRACE();
 
   // Get options for this component
   auto& options = alloptions[name];
@@ -253,7 +252,6 @@ void PolarisationDrift::polarisationAdvection(GuardedOptions& state, Field3D phi
 }
 
 void PolarisationDrift::transform_impl(GuardedOptions& state) {
-  AUTO_TRACE();
 
   // Calculate divergence of all current except polarisation
   DivJ = calcDivJ(state);
@@ -277,8 +275,7 @@ void PolarisationDrift::transform_impl(GuardedOptions& state) {
   polarisationAdvection(state, phi_pol);
 }
 
-void PolarisationDrift::outputVars(Options &state) {
-  AUTO_TRACE();
+void PolarisationDrift::outputVars(Options& state) {
   // Normalisations
   auto Nnorm = get<BoutReal>(state["Nnorm"]);
   auto Tnorm = get<BoutReal>(state["Tnorm"]);
