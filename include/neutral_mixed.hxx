@@ -84,6 +84,7 @@ private:
   bool double_count_lmax; ///< Include neutral_lmax in Dmax and kappa_max as well as Dnn?
   bool legacy_thermal_speed; ///< Use legacy definition of thermal speed in flux limiter?
   bool legacy_limiter_form;  ///< Use legacy form of flux limiter rather than SOLPS-style
+  bool combined_limiters; ///< Use diffusion limiter only and apply it to conduction and viscosity (legacy)
 
   Field3D kappa_n, eta_n_unlimited;      ///< Neutral conduction and viscosity
   Field3D kappa_n_perp, eta_n_perp;      ///< Neutral conduction and viscosity

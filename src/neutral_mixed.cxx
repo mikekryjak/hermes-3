@@ -192,6 +192,11 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                                  "SOLPS-style with sharpness parameter?")
                             .withDefault<bool>(true);
 
+  combined_limiters = options["combined_limiters"]
+                          .doc("Apply a diffusion-derived limiter to all neutral "
+                               "transport (legacy behaviour)?")
+                          .withDefault<bool>(false);
+
   // Optionally output time derivatives
   output_ddt =
       options["output_ddt"].doc("Save derivatives to output?").withDefault<bool>(false);
@@ -507,74 +512,98 @@ void NeutralMixed::finally(const Options& state) {
   Dmax = emptyFrom(Dnn_unlimited);
 
   if (flux_limit_adv > 0.0) {
-    // Thermal velocity of neutrals
-    // Old formulation: 3D thermal speed for advection, that times 3/2 for heat flux
-    // New formulation: 1D particle flow in 3D maxwellian, 1D heat flow in 3D Maxwellian
-    // See Stangeby
 
-    Field3D Vnth_pf = 0.0;
-    Field3D Vnth_hf = 0.0;
+    // Legacy behaviour: only limit diffusion
+    if (combined_limiters) {
 
-    if (legacy_thermal_speed) {
-      Vnth_pf = sqrt(Tnlim / AA);
-      Vnth_hf = 3.0 / 2.0 * Vnth_pf;
-    } else {
-      Vnth_pf = 0.25 * sqrt(8.0 * Tnlim / (PI * AA));
-      Vnth_hf = sqrt(2.0 * Tnlim / (PI * AA));
-    }
+      Dmax =
+          flux_limit_adv * sqrt(Tnlim / AA) / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
 
-    // Calculate maximum diffusivities
-    // double_count_lmax includes neutral_lmax also in the maximum Dnn and kappa,
-    // which is legacy behaviour and double counting.
-    // eta_max never had neutral_lmax added so is omitted
-    if (double_count_lmax) {
-      Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)) + 1. / neutral_lmax);
-      kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim)
-                         / (abs(Grad_perp(Tn)) / Tnlim + 1. / neutral_lmax);
-      kappa_n_max_par = flux_limit_cond_par * (Vnth_hf * Nnlim)
-                        / (abs(Grad_par(Tn)) / Tnlim + 1. / neutral_lmax);
-
-    } else {
-      Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)));
-      kappa_n_max_perp =
-          flux_limit_cond_perp * (Vnth_hf * Nnlim) / (abs(Grad_perp(Tn)) / Tnlim);
-      kappa_n_max_par =
-          flux_limit_cond_par * (Vnth_hf * Nnlim) / (abs(Grad_par(Tn)) / Tnlim);
-    }
-
-    eta_n_max_perp = flux_limit_visc_perp * Pnlim / abs(Grad_perp(Vn));
-    eta_n_max_par = flux_limit_visc_par * Pnlim / abs(Grad_par(Vn));
-
-    // Apply limits
-    static auto apply_limiter = [](BoutReal unlimited, BoutReal max,
-                                   BoutReal flux_limiter_sharpness,
-                                   bool legacy_limiter_form) -> BoutReal {
-      if (legacy_limiter_form) {
-
-        // Simple harmonic average
-        return unlimited * max / (unlimited + max);
-      } else {
-        // SOLPS style limiter
-        return unlimited
-               * pow(1.0 + pow(unlimited / max, flux_limiter_sharpness),
-                     -1.0 / flux_limiter_sharpness);
+      BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
+        Dnn[i] = Dnn_unlimited[i] * Dmax[i] / (Dnn_unlimited[i] + Dmax[i]);
       }
-    };
 
-    BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
-      Dnn[i] = apply_limiter(Dnn_unlimited[i], Dmax[i], flux_limiter_sharpness,
-                             legacy_limiter_form);
-      kappa_n_perp[i] = apply_limiter(kappa_n_unlimited[i], kappa_n_max_perp[i],
+      // Recalculate kappa and eta based on limited Dnn
+      kappa_n_max_perp = (5. / 2) * Dmax * Nnlim;
+      kappa_n_max_par = kappa_n_max_perp;
+      kappa_n_perp = (5. / 2) * Dnn * Nnlim;
+      eta_n_max_perp = AA * (2. / 5) * kappa_n_max_perp;
+      eta_n_max_par = eta_n_max_perp;
+      eta_n_perp = AA * (2. / 5) * kappa_n_perp;
+      kappa_n_par = kappa_n_perp;
+      eta_n_par = eta_n_perp;
+
+    } else {
+
+      // Thermal velocity of neutrals
+      // Old formulation: 3D thermal speed for advection, that times 3/2 for heat flux
+      // New formulation: 1D particle flow in 3D maxwellian, 1D heat flow in 3D Maxwellian
+      // See Stangeby
+
+      Field3D Vnth_pf = 0.0;
+      Field3D Vnth_hf = 0.0;
+
+      if (legacy_thermal_speed) {
+        Vnth_pf = sqrt(Tnlim / AA);
+        Vnth_hf = 3.0 / 2.0 * Vnth_pf;
+      } else {
+        Vnth_pf = 0.25 * sqrt(8.0 * Tnlim / (PI * AA));
+        Vnth_hf = sqrt(2.0 * Tnlim / (PI * AA));
+      }
+
+      // Calculate maximum diffusivities
+      // double_count_lmax includes neutral_lmax also in the maximum Dnn and kappa,
+      // which is legacy behaviour and double counting.
+      // eta_max never had neutral_lmax added so is omitted
+      if (double_count_lmax) {
+        Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)) + 1. / neutral_lmax);
+        kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim)
+                           / (abs(Grad_perp(Tn)) / Tnlim + 1. / neutral_lmax);
+        kappa_n_max_par = flux_limit_cond_par * (Vnth_hf * Nnlim)
+                          / (abs(Grad_par(Tn)) / Tnlim + 1. / neutral_lmax);
+
+      } else {
+        Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)));
+        kappa_n_max_perp =
+            flux_limit_cond_perp * (Vnth_hf * Nnlim) / (abs(Grad_perp(Tn)) / Tnlim);
+        kappa_n_max_par =
+            flux_limit_cond_par * (Vnth_hf * Nnlim) / (abs(Grad_par(Tn)) / Tnlim);
+      }
+
+      eta_n_max_perp = flux_limit_visc_perp * Pnlim / abs(Grad_perp(Vn));
+      eta_n_max_par = flux_limit_visc_par * Pnlim / abs(Grad_par(Vn));
+
+      // Apply limits
+      static auto apply_limiter = [](BoutReal unlimited, BoutReal max,
+                                     BoutReal flux_limiter_sharpness,
+                                     bool legacy_limiter_form) -> BoutReal {
+        if (legacy_limiter_form) {
+
+          // Simple harmonic average
+          return unlimited * max / (unlimited + max);
+        } else {
+          // SOLPS style limiter
+          return unlimited
+                 * pow(1.0 + pow(unlimited / max, flux_limiter_sharpness),
+                       -1.0 / flux_limiter_sharpness);
+        }
+      };
+
+      BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
+        Dnn[i] = apply_limiter(Dnn_unlimited[i], Dmax[i], flux_limiter_sharpness,
+                               legacy_limiter_form);
+        kappa_n_perp[i] = apply_limiter(kappa_n_unlimited[i], kappa_n_max_perp[i],
+                                        flux_limiter_sharpness, legacy_limiter_form);
+        kappa_n_par[i] = apply_limiter(kappa_n_unlimited[i], kappa_n_max_par[i],
+                                       flux_limiter_sharpness, legacy_limiter_form);
+        eta_n_perp[i] = apply_limiter(eta_n_unlimited[i], eta_n_max_perp[i],
                                       flux_limiter_sharpness, legacy_limiter_form);
-      kappa_n_par[i] = apply_limiter(kappa_n_unlimited[i], kappa_n_max_par[i],
+        eta_n_par[i] = apply_limiter(eta_n_unlimited[i], eta_n_max_par[i],
                                      flux_limiter_sharpness, legacy_limiter_form);
-      eta_n_perp[i] = apply_limiter(eta_n_unlimited[i], eta_n_max_perp[i],
-                                    flux_limiter_sharpness, legacy_limiter_form);
-      eta_n_par[i] = apply_limiter(eta_n_unlimited[i], eta_n_max_par[i],
-                                   flux_limiter_sharpness, legacy_limiter_form);
-    }
+      }
 
-    debug = abs(Grad_par(Tn));
+      debug = abs(Grad_par(Tn));
+    }
 
   } else {
     Dnn = Dnn_unlimited;
