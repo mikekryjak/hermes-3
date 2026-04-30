@@ -511,16 +511,35 @@ void NeutralMixed::finally(const Options& state) {
   Dnn = emptyFrom(Dnn_unlimited);
   Dmax = emptyFrom(Dnn_unlimited);
 
+  Field3D Vnth_pf = 0.0;
+  Field3D Vnth_hf = 0.0;
+
   if (flux_limit_adv > 0.0) {
+
+    if (legacy_thermal_speed) {
+        Vnth_pf = sqrt(Tnlim / AA);
+      } else {
+        Vnth_pf = 0.25 * sqrt(8.0 * Tnlim / (PI * AA));
+      }
 
     // Legacy behaviour: only limit diffusion
     if (combined_limiters) {
 
-      Dmax =
-          flux_limit_adv * sqrt(Tnlim / AA) / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
+      if (double_count_lmax) {
+        Dmax = flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
+      } else {
+        Dmax =
+            flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)));
+      }
 
       BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
-        Dnn[i] = Dnn_unlimited[i] * Dmax[i] / (Dnn_unlimited[i] + Dmax[i]);
+        if (legacy_limiter_form) {
+          Dnn[i] = Dnn_unlimited[i] * Dmax[i] / (Dnn_unlimited[i] + Dmax[i]);
+        } else {
+          Dnn[i] = Dnn_unlimited[i]
+                   * pow(1.0 + pow(Dnn_unlimited[i] / Dmax[i], flux_limiter_sharpness),
+                         -1.0 / flux_limiter_sharpness);
+        }
       }
 
       // Recalculate kappa and eta based on limited Dnn
@@ -540,8 +559,7 @@ void NeutralMixed::finally(const Options& state) {
       // New formulation: 1D particle flow in 3D maxwellian, 1D heat flow in 3D Maxwellian
       // See Stangeby
 
-      Field3D Vnth_pf = 0.0;
-      Field3D Vnth_hf = 0.0;
+      
 
       if (legacy_thermal_speed) {
         Vnth_pf = sqrt(Tnlim / AA);
