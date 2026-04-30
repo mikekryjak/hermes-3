@@ -570,8 +570,13 @@ void NeutralMixed::finally(const Options& state) {
             flux_limit_cond_par * (Vnth_hf * Nnlim) / (abs(Grad_par(Tn)) / Tnlim);
       }
 
-      eta_n_max_perp = flux_limit_visc_perp * Pnlim / abs(Grad_perp(Vn));
-      eta_n_max_par = flux_limit_visc_par * Pnlim / abs(Grad_par(Vn));
+      // Numerical regularization to avoid singular viscosity limits for flat initial Vn.
+      // Only activates when the velocity gradient drops below this threshold.
+      const BoutReal viscosity_limiter_grad_floor = 1e-8;
+      eta_n_max_perp = flux_limit_visc_perp * Pnlim
+               / softFloor(abs(Grad_perp(Vn)), viscosity_limiter_grad_floor);
+      eta_n_max_par = flux_limit_visc_par * Pnlim
+              / softFloor(abs(Grad_par(Vn)), viscosity_limiter_grad_floor);
 
       // Apply limits
       static auto apply_limiter = [](BoutReal unlimited, BoutReal max,
