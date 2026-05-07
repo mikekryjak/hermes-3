@@ -134,6 +134,30 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .withDefault<BoutReal>(0.1)
                  / get<BoutReal>(alloptions["units"]["meters"]); // Normalised length
 
+  regularise_denominator =
+      options["regularise_denominator"]
+          .doc("Smoothly regularise D, kappa and eta limiter denominators when not "
+               "using neutral_lmax. Intended for numerical protection only.")
+          .withDefault<bool>(false);
+
+  gradient_floor_D =
+      options["gradient_floor_D"]
+          .doc("Gradient floor used to regularise the D limiter denominator. "
+               "Normalised inverse-length units.")
+          .withDefault<BoutReal>(0.1);
+
+  gradient_floor_kappa =
+      options["gradient_floor_kappa"]
+          .doc("Gradient floor used to regularise kappa limiter denominators. "
+               "Normalised inverse-length units.")
+          .withDefault<BoutReal>(gradient_floor_D);
+
+  gradient_floor_eta =
+      options["gradient_floor_eta"]
+          .doc("Gradient floor used to regularise eta limiter denominators. "
+               "Normalised inverse-length units.")
+          .withDefault<BoutReal>(gradient_floor_D);
+
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
                         .withDefault(-1.0)
@@ -573,6 +597,8 @@ void NeutralMixed::finally(const Options& state) {
       // double_count_lmax includes neutral_lmax also in the maximum Dnn and kappa,
       // which is legacy behaviour and double counting.
       // eta_max never had neutral_lmax added so is omitted
+
+
       if (double_count_lmax) {
         Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)) + 1. / neutral_lmax);
         kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim)
@@ -581,20 +607,48 @@ void NeutralMixed::finally(const Options& state) {
                           / (abs(Grad_par(Tn)) / Tnlim + 1. / neutral_lmax);
 
       } else {
-        Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)));
-        kappa_n_max_perp =
-            flux_limit_cond_perp * (Vnth_hf * Nnlim) / (abs(Grad_perp(Tn)) / Tnlim);
-        kappa_n_max_par =
-            flux_limit_cond_par * (Vnth_hf * Nnlim) / (abs(Grad_par(Tn)) / Tnlim);
+
+        if (regularise_denominator) {
+          Field3D denominator_D =
+              sqrt(Grad_perp(logPnlim) * Grad_perp(logPnlim)
+                   + gradient_floor_D * gradient_floor_D);
+          Field3D denominator_Kperp =
+              sqrt((Grad_perp(Tn) / Tnlim) * (Grad_perp(Tn) / Tnlim)
+                   + gradient_floor_kappa * gradient_floor_kappa);
+          Field3D denominator_Kpar =
+              sqrt((Grad_par(Tn) / Tnlim) * (Grad_par(Tn) / Tnlim)
+                   + gradient_floor_kappa * gradient_floor_kappa);
+
+          Dmax = flux_limit_adv * Vnth_pf / denominator_D;
+          kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim) / denominator_Kperp;
+          kappa_n_max_par = flux_limit_cond_par * (Vnth_hf * Nnlim) / denominator_Kpar;
+
+        } else {
+          Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)));
+          kappa_n_max_perp =
+              flux_limit_cond_perp * (Vnth_hf * Nnlim) / (abs(Grad_perp(Tn)) / Tnlim);
+          kappa_n_max_par =
+              flux_limit_cond_par * (Vnth_hf * Nnlim) / (abs(Grad_par(Tn)) / Tnlim);
+        }
       }
 
-      // Numerical regularization to avoid singular viscosity limits for flat initial Vn.
-      // Only activates when the velocity gradient drops below this threshold.
-      const BoutReal viscosity_limiter_grad_floor = 1e-8;
-      eta_n_max_perp = flux_limit_visc_perp * Pnlim
-               / softFloor(abs(Grad_perp(Vn)), viscosity_limiter_grad_floor);
-      eta_n_max_par = flux_limit_visc_par * Pnlim
-              / softFloor(abs(Grad_par(Vn)), viscosity_limiter_grad_floor);
+      if (regularise_denominator) {
+        Field3D denominator_etaperp =
+            sqrt(Grad_perp(Vn) * Grad_perp(Vn)
+                 + gradient_floor_eta * gradient_floor_eta);
+        Field3D denominator_etapar =
+            sqrt(Grad_par(Vn) * Grad_par(Vn)
+                 + gradient_floor_eta * gradient_floor_eta);
+
+        eta_n_max_perp = flux_limit_visc_perp * Pnlim / denominator_etaperp;
+        eta_n_max_par = flux_limit_visc_par * Pnlim / denominator_etapar;
+      } else {
+        const BoutReal viscosity_limiter_grad_floor = 1e-8;
+        eta_n_max_perp = flux_limit_visc_perp * Pnlim
+                         / softFloor(abs(Grad_perp(Vn)), viscosity_limiter_grad_floor);
+        eta_n_max_par = flux_limit_visc_par * Pnlim
+                        / softFloor(abs(Grad_par(Vn)), viscosity_limiter_grad_floor);
+      }
 
       // Apply limits
       static auto apply_limiter = [](BoutReal unlimited, BoutReal max,

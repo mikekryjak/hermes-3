@@ -60,6 +60,9 @@ private:
 
   BoutReal diffusion_limit; ///< Maximum diffusion coefficient
   BoutReal neutral_lmax;
+  BoutReal gradient_floor_D;     ///< Smooth floor for D limiter denominator
+  BoutReal gradient_floor_kappa; ///< Smooth floor for kappa limiter denominators
+  BoutReal gradient_floor_eta;   ///< Smooth floor for eta limiter denominators
   BoutReal flux_limiter_sharpness; ///< Sharpness of flux limiter transition
 
   bool sheath_ydown, sheath_yup;
@@ -85,6 +88,7 @@ private:
   bool legacy_thermal_speed; ///< Use legacy definition of thermal speed in flux limiter?
   bool legacy_limiter_form;  ///< Use legacy form of flux limiter rather than SOLPS-style
   bool combined_limiters; ///< Use diffusion limiter only and apply it to conduction and viscosity (legacy)
+  bool regularise_denominator; ///< Smoothly regularise D, kappa and eta limiter denominators?
 
   Field3D kappa_n, eta_n_unlimited;      ///< Neutral conduction and viscosity
   Field3D kappa_n_perp, eta_n_perp;      ///< Neutral conduction and viscosity
