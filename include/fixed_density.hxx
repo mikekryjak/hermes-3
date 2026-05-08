@@ -3,6 +3,7 @@
 #define FIXED_DENSITY_H
 
 #include "component.hxx"
+using bout::globals::mesh;
 
 /// Set ion density to a fixed value
 ///
@@ -24,8 +25,15 @@ struct FixedDensity : public Component {
     // Normalisation of density
     const BoutReal Nnorm = alloptions["units"]["inv_meters_cubed"];
 
-    // Get the density and normalise
-    N = options["density"].as<Field3D>() / Nnorm;
+    // Try to get the density from mesh, but allow override from options
+    N = Field3D{0.0};
+    mesh->get(N, std::string("N") + name);
+
+    N = options["density"]
+            .doc("Fixed density value in [m^-3], overrides any density profile in grid")
+            .withDefault(N)
+        / Nnorm;
+
     substitutePermissions("name", {name});
     substitutePermissions("vars", {"AA", "charge", "density"});
   }
