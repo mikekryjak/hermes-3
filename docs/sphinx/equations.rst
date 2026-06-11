@@ -731,26 +731,77 @@ The diffusion coefficients are defined as:
    \eta_{n} =& \frac{2}{5} m_n \kappa_{n} \\
    \end{aligned}
 
-Where :math:`v_{th,n}= \sqrt{\frac{T_n}{m_n}}` is the thermal velocity of neutrals and :math:`\nu_{n, tot}` is the total
-neutral collisionality.  When the `AFN` diffusion collision mode is selected using the `diffusion_collisions_mode` setting, 
-this collisionality is the sum of charge exchange, ionisation, neutral-neutral collisions and the 
-pseudo-collisionality `Rnn`, which represents a mean-free path limit. When the `multispecies` mode is selected, all available 
-collision frequencies are enabled instead of ionisation. `AFN` is recommended in all cases, with the `multispecies` mode representing
-a legacy approach. The `Rnn` pseudo-collisionality is based on the `neutral_lmax` parameter, currently hardcoded to 0.1m, 
-which acts as an effective maximum neutral mean free path. It represents the distance that neutrals can travel before
-hitting a solid surface.
+Where :math:`v_{th,n}= \sqrt{\frac{T_n}{m_n}}` is the thermal speed of neutrals and :math:`\nu_{n, tot}` is the total
+neutral collisionality. This can be comprised of collision frequencies due to several different types of events - 
+atomic reactions, elastic collisions or a pseudo-collisionality representing the maximum neutral mean-free path.
+The latter is controlled by the `neutral_lmax` parameter which represents the maximum MFP in metres. It's a way to
+artificially limit neutral diffusion independently of plasma conditions and can be useful in regions of low collisionality. 
+This has the physical interpretation of a finite vessel size limiting the distance that a neutral can travel.
 
-In an additional effort to limit the diffusivitiy to more physical values, a flux limiter has been implemented which clamps
-:math:`D_n` to :math:`D_{n,max}` defined as:
+There are currently two sets of collisionalities that can be used: `AFN` and `multispecies` as selected by the 
+`diffusion_collisions_mode` setting. In `AFN`, the mix represents the SOLPS-ITER Advanced Fluid Neutral model
+choice (Horsten 2017) including charge exchange, ionisation and neutral-neutral collisions. When the `multispecies` mode 
+is selected, all available collision frequencies are enabled `AFN` is recommended in all cases, with the `multispecies` mode representing
+a legacy approach. Both modes additionally include the pseudo-collisionality set by `neutral_lmax`. 
+
+In an additional effort to limit the diffusivitiy to more physical values, flux limiters have been implemented. 
+Two implementations are available, a legacy one and a new, improved model based on the AFN work in Horsten 2017.
+The new implementation is more accurate, but suffers from a performance penalty and so the legacy model 
+is enabled by default. 
+
+To enable the new implementation, set all three of the following flags to true:
+
+.. code-block:: ini
+
+   [neutral_mixed]
+   legacy_limit
+
+In the legacy model, :math:`D_n` is limited to :math:`D_{n,max}`, which is defined as defined as:
 
 .. math::
 
    \begin{aligned}
-   D_{n,max} =& f_l \frac{v_{th,n}}{abs(\nabla ln(P_n) + 1/l_{max})}
+   D_{n,max} =& \alpha \frac{v_{th,n}}{abs(\nabla ln(P_n) + 1/l_{max})}
    \end{aligned}
 
-This formulation is equivalent to defining a :math:`D_n` with a free streaming velocity while accounting for the pseudo collisionality due 
-to the maximum vessel mean free path :math:`l_{max}`. The flux limiter :math:`f_l` is set to 1.0 by default.
+This formulation is equivalent to defining a :math:`D_n` but with a free-streaming velocity. \alpha is the flux limiter
+value representing the fraction of free-streaming flux allowed. 
+
+In the new model, advection, conduction and viscosity each get their own free-streaming flux definition:
+
+.. math::
+
+   \begin{aligned}
+   \Gamma_{D,\perp, max} =& N_n \frac{1}{4} \sqrt{ \frac{8T_n}{\pi m_n}} \\
+   \Gamma_{\kappa,\perp, max} =& P_n \sqrt{ \frac{ 2T_n}{\pi m_n}} \\
+   \Gamma_{\eta,\perp, max} =& P_n
+   \end{aligned}
+
+This is then rearranged to obtain a maximum perpendicular diffusivity, conductivity and viscosity:
+
+.. math::
+
+   \begin{aligned}
+   D_{\perp, n, max} =& \frac{\alpha_{D,\perp} \frac{1}{4} \sqrt{ \frac{8T_n}{\pi m_n}}}{|\nabla_{\perp} P_n / P_n|} \\
+   \kappa_{\perp,n, max} =& \frac{\alpha_{\kappa, \perp} \sqrt{ \frac{ 2T_n}{\pi m_n}}}{|\nabla_{\perp} T_n / T_n|} \\
+   \eta_{\perp, n, max} =& \frac{\alpha_{\eta, \perp} P_n}{|\nabla_{\perp} v_{n,\parallel}|} \\
+   \end{aligned}
+
+Conductivity and viscosity additionally have parallel limiters:
+
+.. math::
+
+   \begin{aligned}
+   \kappa_{\parallel, n, max} =& \frac{\alpha_{\kappa, \parallel} \sqrt{ \frac{ 2T_n}{\pi m_n}}}{|\nabla_{\parallel} T_n / T_n|} \\
+   \eta_{\parallel, n, max} =& \frac{\alpha_{\eta, \parallel} P_n}{|\nabla_{\parallel} v_{n,\parallel}|} \\
+   \end{aligned}
+
+That leaves five separate flux limiters: \alpha_{D,\perp}, \alpha_{\kappa, \perp}, \alpha_{\eta, \perp}, \alpha_{\kappa, \parallel} and \alpha_{\eta, \parallel}.
+These are set by the options `flux_limit`, `flux_limit_cond_perp`, `flux_limit_visc_perp`, `flux_limit_cond_par` and `flux_limit_visc_perp`, respectively.
+By default, the parallel limiter values are set to their corresponding perpendicular limiter values, and those in turn are set to 
+the value of the diffusion limiter `flux_limit`. This means that changing `flux_limit` will change all five limiters unless they are
+set separately. 
+
 
 .. doxygenstruct:: NeutralMixed
    :members:
