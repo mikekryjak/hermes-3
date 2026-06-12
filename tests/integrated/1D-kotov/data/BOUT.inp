@@ -16,10 +16,10 @@
 
 # Number of output time-steps to write out
 # This is the interval between writing output time-steps (solver timestep is automatic)
-nout = 50
+nout = 500
 
 # Normalisation: see BOUT++ docs
-timestep = 95788 * 0.05   # 95788 is 1 millisecond
+timestep = 9578.8 * 0.05   # 95788 is 1 millisecond
 
 # No guard cells in X
 MXG = 0
