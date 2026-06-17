@@ -53,7 +53,8 @@ struct FixedVelocity : public Component {
     if (has_momentum) {
 
       set_with_attrs(state[fmt::format("NV{}", name)], NV,
-                     {{"units", "kg / m^2 / s"},
+                     {{"time_dimension", "t"},
+                      {"units", "kg / m^2 / s"},
                       {"conversion", SI::Mp * Nnorm * Cs0},
                       {"long_name", name + " momentum"},
                       {"standard_name", "momentum"},
