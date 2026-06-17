@@ -3,6 +3,7 @@
 #define FIXED_VELOCITY_H
 
 #include "component.hxx"
+#include <bout/constants.hxx>
 #include <bout/globals.hxx>
 
 /// Set parallel velocity to a fixed value
@@ -23,9 +24,10 @@ struct FixedVelocity : public Component {
 
     // Get the velocity and normalise
     // First read from the mesh file e.g. "Ve0"
-    if ((bout::globals::mesh->get(V, std::string("V") + name + "0") != 0) and
-        !options.isSet("velocity")) {
-      throw BoutException("fixed_velocity: Missing mesh V{}0 or option {}:velocity\n", name, name);
+    if ((bout::globals::mesh->get(V, std::string("V") + name + "0") != 0)
+        and !options.isSet("velocity")) {
+      throw BoutException("fixed_velocity: Missing mesh V{}0 or option {}:velocity\n",
+                          name, name);
     }
     // Option overrides mesh value
     // so use mesh value (if any) as default value.
@@ -37,6 +39,7 @@ struct FixedVelocity : public Component {
 
   void outputVars(Options& state) override {
     auto Cs0 = get<BoutReal>(state["Cs0"]);
+    auto Nnorm = get<BoutReal>(state["Nnorm"]);
 
     // Save the density, not time dependent
     set_with_attrs(state[std::string("V") + name], V,
@@ -46,12 +49,25 @@ struct FixedVelocity : public Component {
                     {"standard_name", "velocity"},
                     {"species", name},
                     {"source", "fixed_velocity"}});
+
+    if (has_momentum) {
+
+      set_with_attrs(state[fmt::format("NV{}", name)], NV,
+                     {{"units", "kg / m^2 / s"},
+                      {"conversion", SI::Mp * Nnorm * Cs0},
+                      {"long_name", name + " momentum"},
+                      {"standard_name", "momentum"},
+                      {"species", name},
+                      {"source", "fixed_velocity"}});
+    }
   }
 
 private:
   std::string name; ///< Short name of species e.g "e"
 
-  Field3D V; ///< Species velocity (normalised)
+  Field3D V;                ///< Species velocity (normalised)
+  Field3D NV;               ///< Species momentum (normalised)
+  bool has_momentum{false}; ///< True if momentum is set in the state
 
   /// This sets in the state
   /// - species
@@ -67,7 +83,9 @@ private:
       const Field3D N = getNoBoundary<Field3D>(species["density"]);
       const BoutReal AA = get<BoutReal>(species["AA"]); // Atomic mass
 
-      set(species["momentum"], AA * N * V);
+      NV = AA * N * V;
+      set(species["momentum"], NV);
+      has_momentum = true;
     }
   }
 };
