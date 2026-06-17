@@ -541,19 +541,27 @@ void NeutralMixed::finally(const Options& state) {
   if (flux_limit_adv > 0.0) {
 
     if (legacy_thermal_speed) {
-        Vnth_pf = sqrt(Tnlim / AA);
-      } else {
-        Vnth_pf = 0.25 * sqrt(8.0 * Tnlim / (PI * AA));
-      }
+      Vnth_pf = sqrt(Tnlim / AA);
+    } else {
+      Vnth_pf = 0.25 * sqrt(8.0 * Tnlim / (PI * AA));
+    }
 
     // Legacy behaviour: only limit diffusion
     if (combined_limiters) {
 
+      // "double_count_lmax" is the inclusion of neutral_lmax in the neutral limiters.
       if (double_count_lmax) {
         Dmax = flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
+
       } else {
-        Dmax =
-            flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)));
+
+        if (regularise_denominator) {
+          Dmax = flux_limit_adv * Vnth_pf
+                 / (sqrt(Grad(logPnlim) * Grad(logPnlim)
+                         + gradient_floor_D * gradient_floor_D));
+        } else {
+          Dmax = flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)));
+        }
       }
 
       BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
@@ -583,8 +591,6 @@ void NeutralMixed::finally(const Options& state) {
       // New formulation: 1D particle flow in 3D maxwellian, 1D heat flow in 3D Maxwellian
       // See Stangeby
 
-      
-
       if (legacy_thermal_speed) {
         Vnth_pf = sqrt(Tnlim / AA);
         Vnth_hf = 3.0 / 2.0 * Vnth_pf;
@@ -598,7 +604,6 @@ void NeutralMixed::finally(const Options& state) {
       // which is legacy behaviour and double counting.
       // eta_max never had neutral_lmax added so is omitted
 
-
       if (double_count_lmax) {
         Dmax = flux_limit_adv * Vnth_pf / (abs(Grad_perp(logPnlim)) + 1. / neutral_lmax);
         kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim)
@@ -609,15 +614,13 @@ void NeutralMixed::finally(const Options& state) {
       } else {
 
         if (regularise_denominator) {
-          Field3D denominator_D =
-              sqrt(Grad_perp(logPnlim) * Grad_perp(logPnlim)
-                   + gradient_floor_D * gradient_floor_D);
+          Field3D denominator_D = sqrt(Grad_perp(logPnlim) * Grad_perp(logPnlim)
+                                       + gradient_floor_D * gradient_floor_D);
           Field3D denominator_Kperp =
               sqrt((Grad_perp(Tn) / Tnlim) * (Grad_perp(Tn) / Tnlim)
                    + gradient_floor_kappa * gradient_floor_kappa);
-          Field3D denominator_Kpar =
-              sqrt((Grad_par(Tn) / Tnlim) * (Grad_par(Tn) / Tnlim)
-                   + gradient_floor_kappa * gradient_floor_kappa);
+          Field3D denominator_Kpar = sqrt((Grad_par(Tn) / Tnlim) * (Grad_par(Tn) / Tnlim)
+                                          + gradient_floor_kappa * gradient_floor_kappa);
 
           Dmax = flux_limit_adv * Vnth_pf / denominator_D;
           kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim) / denominator_Kperp;
@@ -634,11 +637,9 @@ void NeutralMixed::finally(const Options& state) {
 
       if (regularise_denominator) {
         Field3D denominator_etaperp =
-            sqrt(Grad_perp(Vn) * Grad_perp(Vn)
-                 + gradient_floor_eta * gradient_floor_eta);
+            sqrt(Grad_perp(Vn) * Grad_perp(Vn) + gradient_floor_eta * gradient_floor_eta);
         Field3D denominator_etapar =
-            sqrt(Grad_par(Vn) * Grad_par(Vn)
-                 + gradient_floor_eta * gradient_floor_eta);
+            sqrt(Grad_par(Vn) * Grad_par(Vn) + gradient_floor_eta * gradient_floor_eta);
 
         eta_n_max_perp = flux_limit_visc_perp * Pnlim / denominator_etaperp;
         eta_n_max_par = flux_limit_visc_par * Pnlim / denominator_etapar;
