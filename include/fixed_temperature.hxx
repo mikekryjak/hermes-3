@@ -4,6 +4,7 @@
 
 #include "component.hxx"
 #include <bout/constants.hxx>
+using bout::globals::mesh;
 
 /// Set species temperature to a fixed value
 ///
@@ -24,8 +25,14 @@ struct FixedTemperature : public Component {
     auto Tnorm = get<BoutReal>(alloptions["units"]["eV"]);
 
     // Get the temperature and normalise
-    T = options["temperature"].doc("Constant temperature [eV]").as<Field3D>()
-        / Tnorm; // Normalise
+    T = Field3D{0.0};
+    mesh->get(T, std::string("T") + name);
+
+    T = options["temperature"]
+            .doc("Constant temperature [eV], overrides any temperature profile in grid")
+            .withDefault(T); // Normalise
+
+    T /= Tnorm;
 
     diagnose = options["diagnose"]
                    .doc("Save additional output diagnostics")
@@ -99,7 +106,8 @@ private:
 };
 
 namespace {
-RegisterComponent<FixedTemperature> registercomponentfixedtemperature("fixed_temperature");
+RegisterComponent<FixedTemperature>
+    registercomponentfixedtemperature("fixed_temperature");
 }
 
 #endif // FIXED_TEMPERATURE_H
