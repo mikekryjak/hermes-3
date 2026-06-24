@@ -34,7 +34,7 @@
 /// # Useful references:
 ///
 ///  *  Braginskii equations by R.Fitzpatrick:
-///     http://farside.ph.utexas.edu/teaching/plasma/Plasmahtml/node35.html
+///     http://farside.ph.utexas.edu/teaching/plasma/Plasmahtml/node54.html
 ///
 ///  *  J.P.Brodrick et al 2017: https://doi.org/10.1063/1.5001079 and
 ///     https://arxiv.org/abs/1704.08963
@@ -59,16 +59,17 @@ struct SNBConduction : public Component {
     Omega_ci = 1. / get<BoutReal>(units["seconds"]);
 
     diagnose = options["diagnose"]
-      .doc("Save additional output diagnostics")
-      .withDefault<bool>(false);
+                   .doc("Save additional output diagnostics")
+                   .withDefault<bool>(false);
   }
 
   void outputVars(Options& state) override;
+
 private:
   bout::HeatFluxSNB snb;
 
   BoutReal rho_s0, Tnorm, Nnorm, Omega_ci; ///< Normalisations for units
-  Field3D Div_Q_SH, Div_Q_SNB; ///< Divergence of heat fluxes
+  Field3D Div_Q_SH, Div_Q_SNB;             ///< Divergence of heat fluxes
 
   bool diagnose; ///< Output additional diagnostics?
 
@@ -90,4 +91,3 @@ RegisterComponent<SNBConduction> registercomponentsnbconduction("snb_conduction"
 }
 
 #endif // SNB_CONDUCTION_H
-

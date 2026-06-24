@@ -12,7 +12,7 @@
 /// Intended mainly for testing.
 ///
 /// Expressions taken from:
-/// https://farside.ph.utexas.edu/teaching/plasma/lectures1/node35.html
+/// https://farside.ph.utexas.edu/teaching/plasma/lectures1/node55.html
 struct SimpleConduction : public Component {
   SimpleConduction(std::string name, Options& alloptions, Solver*)
       : Component({readOnly("species:{name}:temperature", Regions::Interior),
@@ -56,8 +56,8 @@ struct SimpleConduction : public Component {
               / Nnorm;
 
     boundary_flux = options["conduction_boundary_flux"]
-      .doc("Allow heat conduction through sheath boundaries?")
-      .withDefault<bool>(false);
+                        .doc("Allow heat conduction through sheath boundaries?")
+                        .withDefault<bool>(false);
 
     if (density <= 0.0) {
       setPermissions(readOnly("species:{name}:density", Regions::Interior));
@@ -73,7 +73,7 @@ private:
   BoutReal temperature; ///< Fix temperature if > 0
   BoutReal density;     ///< Fix density if > 0
 
-  bool boundary_flux;   ///< Allow flux through sheath boundaries?
+  bool boundary_flux; ///< Allow flux through sheath boundaries?
 
   void transform_impl(GuardedOptions& state) override {
     auto species = state["species"][name];
