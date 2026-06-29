@@ -218,6 +218,12 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
           .doc("Include neutral_lmax in Dmax and kappa_max as well as Dnn?")
           .withDefault<bool>(true);
 
+  D_perp_grad_only =
+      options["D_perp_grad_only"]
+          .doc("Use Grad_perp(logPnlim) instead of Grad(logPnlim) when building the "
+               "combined diffusion limiter.")
+          .withDefault<bool>(false);
+
   legacy_thermal_speed =
       options["legacy_thermal_speed"]
           .doc("Use legacy definition of thermal speed in flux limiter?")
@@ -556,19 +562,20 @@ void NeutralMixed::finally(const Options& state) {
 
     // Legacy behaviour: only limit diffusion
     if (combined_limiters) {
+      const auto grad_logPnlim = D_perp_grad_only ? Grad_perp(logPnlim) : Grad(logPnlim);
 
       // "double_count_lmax" is the inclusion of neutral_lmax in the neutral limiters.
       if (double_count_lmax) {
-        Dmax = flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)) + 1. / neutral_lmax);
+        Dmax = flux_limit_adv * Vnth_pf / (abs(grad_logPnlim) + 1. / neutral_lmax);
 
       } else {
 
         if (regularise_denominator) {
           Dmax = flux_limit_adv * Vnth_pf
-                 / (sqrt(Grad(logPnlim) * Grad(logPnlim)
+                 / (sqrt(grad_logPnlim * grad_logPnlim
                          + gradient_floor_D * gradient_floor_D));
         } else {
-          Dmax = flux_limit_adv * Vnth_pf / (abs(Grad(logPnlim)));
+          Dmax = flux_limit_adv * Vnth_pf / (abs(grad_logPnlim));
         }
       }
 
