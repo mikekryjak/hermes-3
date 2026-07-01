@@ -63,6 +63,7 @@ private:
   BoutReal gradient_floor_D;       ///< Smooth floor for D limiter denominator
   BoutReal gradient_floor_kappa;   ///< Smooth floor for kappa limiter denominators
   BoutReal gradient_floor_eta;     ///< Smooth floor for eta limiter denominators
+  BoutReal gradient_ceiling_D;     ///< Hard ceiling for D limiter denominator
   BoutReal flux_limiter_sharpness; ///< Sharpness of flux limiter transition
 
   bool sheath_ydown, sheath_yup;

@@ -170,6 +170,16 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                "Normalised inverse-length units.")
           .withDefault<BoutReal>(gradient_floor_D);
 
+  gradient_ceiling_D =
+      options["gradient_ceiling_D"]
+          .doc("Gradient ceiling for the D limiter denominator: caps |grad log Pn| from "
+               "above, preventing D_max from collapsing to zero in steep-gradient "
+               "regions. "
+               "Paired with gradient_floor_D. Normalised inverse-length units. "
+               "0 = disabled. Recommended starting value: 1 / (3 * dy_min), where dy_min "
+               "is the smallest perpendicular cell width in normalised units.")
+          .withDefault<BoutReal>(0.0);
+
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
                         .withDefault(-1.0)
@@ -571,9 +581,14 @@ void NeutralMixed::finally(const Options& state) {
       } else {
 
         if (regularise_denominator) {
-          Dmax = flux_limit_adv * Vnth_pf
-                 / (sqrt(grad_logPnlim * grad_logPnlim
-                         + gradient_floor_D * gradient_floor_D));
+          const Field3D g_sq = grad_logPnlim * grad_logPnlim;
+          // Smooth ceiling: g_soft^2 = g^2 * g_ceil^2 / (g^2 + g_ceil^2)
+          // → g_soft → g for g << g_ceil, g_soft → g_ceil for g >> g_ceil (C-inf)
+          const Field3D g_sq_eff =
+              (gradient_ceiling_D > 0.0)
+                  ? g_sq * SQ(gradient_ceiling_D) / (g_sq + SQ(gradient_ceiling_D))
+                  : g_sq;
+          Dmax = flux_limit_adv * Vnth_pf / sqrt(g_sq_eff + SQ(gradient_floor_D));
         } else {
           Dmax = flux_limit_adv * Vnth_pf / (abs(grad_logPnlim));
         }
@@ -629,8 +644,14 @@ void NeutralMixed::finally(const Options& state) {
       } else {
 
         if (regularise_denominator) {
-          Field3D denominator_D = sqrt(Grad_perp(logPnlim) * Grad_perp(logPnlim)
-                                       + gradient_floor_D * gradient_floor_D);
+          const Field3D g_sq_D = Grad_perp(logPnlim) * Grad_perp(logPnlim);
+          const Field3D g_sq_D_eff =
+              (gradient_ceiling_D > 0.0)
+                  ? g_sq_D * SQ(gradient_ceiling_D) / (g_sq_D + SQ(gradient_ceiling_D))
+                  : g_sq_D;
+          Field3D denominator_D = sqrt(g_sq_D_eff + SQ(gradient_floor_D));
+
+          // TODO: Implement gradient ceiling for kappa and eta if needed
           Field3D denominator_Kperp =
               sqrt((Grad_perp(Tn) / Tnlim) * (Grad_perp(Tn) / Tnlim)
                    + gradient_floor_kappa * gradient_floor_kappa);
