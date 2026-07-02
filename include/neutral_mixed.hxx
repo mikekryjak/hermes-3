@@ -60,6 +60,7 @@ private:
 
   BoutReal diffusion_limit; ///< Maximum diffusion coefficient
   BoutReal neutral_lmax;
+  bool soft_mfp_floor; ///< Apply neutral_lmax pseudo-collisionality as a soft floor on nu
   BoutReal gradient_floor_D;     ///< Smooth floor for D limiter denominator
   BoutReal gradient_floor_kappa; ///< Smooth floor for kappa limiter denominators
   BoutReal gradient_floor_eta;   ///< Smooth floor for eta limiter denominators

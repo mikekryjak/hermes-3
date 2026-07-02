@@ -146,6 +146,14 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                      .withDefault<BoutReal>(0.1)
                  / get<BoutReal>(alloptions["units"]["meters"]); // Normalised length
 
+  soft_mfp_floor =
+      options["soft_mfp_floor"]
+          .doc("Apply the neutral_lmax pseudo-collisionality as a soft floor on the "
+               "collision frequency (softFloor form) instead of adding it "
+               "everywhere. Removes the bias of the mfp cap in collisional regions "
+               "while keeping the same floor in near-vacuum regions.")
+          .withDefault<bool>(false);
+
   regularise_denominator =
       options["regularise_denominator"]
           .doc("Smoothly regularise D, kappa and eta limiter denominators when not "
@@ -564,7 +572,14 @@ void NeutralMixed::finally(const Options& state) {
     nu = 0.0;
   }
 
-  nu_total = nu + nu_pseudo_mfp;
+  if (soft_mfp_floor) {
+    // softFloor form (hermes_utils.hxx): the mfp pseudo-collisionality acts as
+    // a floor that decays exponentially once nu exceeds it, instead of biasing
+    // nu additively in collisional regions.
+    nu_total = nu + nu_pseudo_mfp * exp(-nu / nu_pseudo_mfp);
+  } else {
+    nu_total = nu + nu_pseudo_mfp;
+  }
   if (collisionality_override > 0.0) {
     nu_total = collisionality_override;
   }
