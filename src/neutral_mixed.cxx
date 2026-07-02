@@ -176,9 +176,41 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                "above, preventing D_max from collapsing to zero in steep-gradient "
                "regions. "
                "Paired with gradient_floor_D. Normalised inverse-length units. "
-               "0 = disabled. Recommended starting value: 1 / (3 * dy_min), where dy_min "
-               "is the smallest perpendicular cell width in normalised units.")
+               "0 = disabled. See gradient_ceiling_from_grid to derive it from the "
+               "mesh instead of setting it directly.")
           .withDefault<BoutReal>(0.0);
+
+  gradient_ceiling_from_grid =
+      options["gradient_ceiling_from_grid"]
+          .doc("Compute gradient_ceiling_D from the grid at startup as "
+               "gradient_ceiling_multiplier / min(radial cell width), so the limiter "
+               "cannot react to gradients on scales the mesh cannot resolve. "
+               "Overrides gradient_ceiling_D.")
+          .withDefault<bool>(false);
+
+  if (gradient_ceiling_from_grid) {
+    const BoutReal gradient_ceiling_multiplier =
+        options["gradient_ceiling_multiplier"]
+            .doc("Multiplies the grid-detected minimum inverse radial cell width "
+                 "1/dr_min to give gradient_ceiling_D. E.g. 0.25 caps the limiter "
+                 "gradient at scale lengths shorter than 4 minimum radial cell "
+                 "widths.")
+            .withDefault<BoutReal>(0.25);
+
+    Coordinates* coords = mesh->getCoordinates();
+    // Radial cell width dr = dx / |grad x| = dx / sqrt(g11), normalised units.
+    // Boundary cells are excluded: guard-cell metrics (e.g. at targets) are
+    // not representative of the interior resolution.
+    const auto dr = coords->dx / sqrt(coords->g11);
+    const BoutReal dr_min = min(dr, true, "RGN_NOBNDRY"); // Min over all processors
+    gradient_ceiling_D = gradient_ceiling_multiplier / dr_min;
+
+    output_info.write("\t{:s} gradient ceiling from grid: min radial cell width = "
+                      "{:.4e} (normalised) = {:.4e} m, multiplier = {:.3g} -> "
+                      "gradient_ceiling_D = {:.4e}\n",
+                      name, dr_min, dr_min * meters, gradient_ceiling_multiplier,
+                      gradient_ceiling_D);
+  }
 
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")

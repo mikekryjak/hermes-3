@@ -60,10 +60,12 @@ private:
 
   BoutReal diffusion_limit; ///< Maximum diffusion coefficient
   BoutReal neutral_lmax;
-  BoutReal gradient_floor_D;       ///< Smooth floor for D limiter denominator
-  BoutReal gradient_floor_kappa;   ///< Smooth floor for kappa limiter denominators
-  BoutReal gradient_floor_eta;     ///< Smooth floor for eta limiter denominators
-  BoutReal gradient_ceiling_D;     ///< Hard ceiling for D limiter denominator
+  BoutReal gradient_floor_D;     ///< Smooth floor for D limiter denominator
+  BoutReal gradient_floor_kappa; ///< Smooth floor for kappa limiter denominators
+  BoutReal gradient_floor_eta;   ///< Smooth floor for eta limiter denominators
+  BoutReal gradient_ceiling_D;   ///< Smooth ceiling for D limiter denominator
+  bool
+      gradient_ceiling_from_grid; ///< Derive gradient_ceiling_D from min radial cell width
   BoutReal flux_limiter_sharpness; ///< Sharpness of flux limiter transition
 
   bool sheath_ydown, sheath_yup;
