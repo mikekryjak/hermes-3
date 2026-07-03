@@ -178,7 +178,7 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                "Normalised inverse-length units.")
           .withDefault<BoutReal>(gradient_floor_D);
 
-  gradient_ceiling_D =
+  const BoutReal gradient_ceiling_value =
       options["gradient_ceiling_D"]
           .doc("Gradient ceiling for the D limiter denominator: caps |grad log Pn| from "
                "above, preventing D_max from collapsing to zero in steep-gradient "
@@ -190,34 +190,42 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
 
   gradient_ceiling_from_grid =
       options["gradient_ceiling_from_grid"]
-          .doc("Compute gradient_ceiling_D from the grid at startup as "
-               "gradient_ceiling_multiplier / min(radial cell width), so the limiter "
-               "cannot react to gradients on scales the mesh cannot resolve. "
-               "Overrides gradient_ceiling_D.")
+          .doc("Compute a per-cell gradient_ceiling_D from the grid at startup as "
+               "gradient_ceiling_multiplier / (local radial cell width), so the "
+               "limiter cannot react to gradients on scales the local mesh cannot "
+               "resolve. Overrides gradient_ceiling_D.")
           .withDefault<bool>(false);
+
+  use_gradient_ceiling = gradient_ceiling_from_grid or (gradient_ceiling_value > 0.0);
 
   if (gradient_ceiling_from_grid) {
     const BoutReal gradient_ceiling_multiplier =
         options["gradient_ceiling_multiplier"]
-            .doc("Multiplies the grid-detected minimum inverse radial cell width "
-                 "1/dr_min to give gradient_ceiling_D. E.g. 0.25 caps the limiter "
-                 "gradient at scale lengths shorter than 4 minimum radial cell "
-                 "widths.")
+            .doc("Multiplies the local inverse radial cell width 1/dr to give the "
+                 "per-cell gradient_ceiling_D. E.g. 0.25 caps the limiter gradient "
+                 "at scale lengths shorter than 4 local radial cell widths.")
             .withDefault<BoutReal>(0.25);
 
     Coordinates* coords = mesh->getCoordinates();
     // Radial cell width dr = dx / |grad x| = dx / sqrt(g11), normalised units.
-    // Boundary cells are excluded: guard-cell metrics (e.g. at targets) are
-    // not representative of the interior resolution.
+    // Metrics are defined in guard cells, so the ceiling field is too.
     const auto dr = coords->dx / sqrt(coords->g11);
-    const BoutReal dr_min = min(dr, true, "RGN_NOBNDRY"); // Min over all processors
-    gradient_ceiling_D = gradient_ceiling_multiplier / dr_min;
+    gradient_ceiling_D = gradient_ceiling_multiplier / dr;
 
-    output_info.write("\t{:s} gradient ceiling from grid: min radial cell width = "
-                      "{:.4e} (normalised) = {:.4e} m, multiplier = {:.3g} -> "
-                      "gradient_ceiling_D = {:.4e}\n",
-                      name, dr_min, dr_min * meters, gradient_ceiling_multiplier,
-                      gradient_ceiling_D);
+    const BoutReal ceil_min = min(gradient_ceiling_D, true, "RGN_NOBNDRY");
+    const BoutReal ceil_max = max(gradient_ceiling_D, true, "RGN_NOBNDRY");
+    output_info.write(
+        "\t{:s} gradient ceiling from grid: radial cell width {:.4e} - {:.4e} m, "
+        "multiplier = {:.3g} -> gradient_ceiling_D in [{:.4e}, {:.4e}]\n",
+        name, gradient_ceiling_multiplier / ceil_max * meters,
+        gradient_ceiling_multiplier / ceil_min * meters, gradient_ceiling_multiplier,
+        ceil_min, ceil_max);
+  } else {
+    gradient_ceiling_D = gradient_ceiling_value;
+  }
+
+  if (use_gradient_ceiling) {
+    gradient_ceiling_sq = gradient_ceiling_D * gradient_ceiling_D;
   }
 
   diffusion_limit = options["diffusion_limit"]
@@ -632,8 +640,8 @@ void NeutralMixed::finally(const Options& state) {
           // Smooth ceiling: g_soft^2 = g^2 * g_ceil^2 / (g^2 + g_ceil^2)
           // → g_soft → g for g << g_ceil, g_soft → g_ceil for g >> g_ceil (C-inf)
           const Field3D g_sq_eff =
-              (gradient_ceiling_D > 0.0)
-                  ? g_sq * SQ(gradient_ceiling_D) / (g_sq + SQ(gradient_ceiling_D))
+              use_gradient_ceiling
+                  ? g_sq * gradient_ceiling_sq / (g_sq + gradient_ceiling_sq)
                   : g_sq;
           Dmax = flux_limit_adv * Vnth_pf / sqrt(g_sq_eff + SQ(gradient_floor_D));
         } else {
@@ -693,8 +701,8 @@ void NeutralMixed::finally(const Options& state) {
         if (regularise_denominator) {
           const Field3D g_sq_D = Grad_perp(logPnlim) * Grad_perp(logPnlim);
           const Field3D g_sq_D_eff =
-              (gradient_ceiling_D > 0.0)
-                  ? g_sq_D * SQ(gradient_ceiling_D) / (g_sq_D + SQ(gradient_ceiling_D))
+              use_gradient_ceiling
+                  ? g_sq_D * gradient_ceiling_sq / (g_sq_D + gradient_ceiling_sq)
                   : g_sq_D;
           Field3D denominator_D = sqrt(g_sq_D_eff + SQ(gradient_floor_D));
 

@@ -64,9 +64,12 @@ private:
   BoutReal gradient_floor_D;     ///< Smooth floor for D limiter denominator
   BoutReal gradient_floor_kappa; ///< Smooth floor for kappa limiter denominators
   BoutReal gradient_floor_eta;   ///< Smooth floor for eta limiter denominators
-  BoutReal gradient_ceiling_D;   ///< Smooth ceiling for D limiter denominator
+  Field3D
+      gradient_ceiling_D; ///< Smooth ceiling for D limiter denominator (uniform or per-cell)
+  Field3D gradient_ceiling_sq; ///< Precomputed square of gradient_ceiling_D
+  bool use_gradient_ceiling;   ///< Is the D gradient ceiling active?
   bool
-      gradient_ceiling_from_grid; ///< Derive gradient_ceiling_D from min radial cell width
+      gradient_ceiling_from_grid; ///< Derive per-cell gradient_ceiling_D from local radial cell width
   BoutReal flux_limiter_sharpness; ///< Sharpness of flux limiter transition
 
   bool sheath_ydown, sheath_yup;
