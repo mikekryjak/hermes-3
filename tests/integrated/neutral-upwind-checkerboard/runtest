@@ -1,0 +1,117 @@
+#!/usr/bin/env python3
+#
+# Odd-even (checkerboard) decay test for the saturation-weighted upwind
+# neutral flux operator (d:weighted_upwind_perp_adv).
+#
+# Runs the same deeply-saturated slab twice: central scheme (flag off) and
+# weighted upwind (flag on). The odd-even mode amplitude is measured by
+# projecting the locally-demeaned Nd onto (-1)^i along x. Checks:
+#   1. the background is deeply saturated (the premise of the test),
+#   2. the mode decays substantially with the flag on,
+#   3. the flag-on end amplitude is well below the flag-off end amplitude
+#      (skipped if the flag-off run fails: an uncontrolled mode crashing the
+#      central run is consistent with the mechanism under test).
+# The measured flag-on decay rate is also compared, informationally, with
+# the modified-equation prediction gamma = pi^2 * flux_limit * vth / (2 dx).
+
+from boututils.run_wrapper import shell, launch
+from boutdata.collect import collect
+import numpy as np
+from sys import exit
+
+shell("ln -s ../../../hermes-3 hermes-3")
+
+
+def checkerboard_amplitude(n):
+    """Amplitude of the odd-even mode along x, averaged over y and t-resolved.
+
+    n has shape [t, x, y, z] including guard cells. The field is locally
+    demeaned along x (removes the smooth background to second order) and
+    projected onto (-1)^i, so a pure mode a*(-1)^i returns amplitude a.
+    """
+    interior = n[:, 2:-2, :, 0]
+    fluct = interior - 0.5 * (
+        np.roll(interior, 1, axis=1) + np.roll(interior, -1, axis=1)
+    )
+    # edge cells wrap in np.roll; drop them from the projection
+    fluct = fluct[:, 1:-1, :]
+    sign = (-1.0) ** np.arange(fluct.shape[1])
+    return np.abs(np.mean(0.5 * fluct * sign[None, :, None], axis=(1, 2)))
+
+
+amp = {}
+status = {}
+for flag in ["false", "true"]:
+    path = f"data-upwind-{flag}"
+    shell(f"rm -rf {path}")
+    shell(f"cp -r data {path}")
+    s, out = launch(
+        f"./hermes-3 -d {path} d:weighted_upwind_perp_adv={flag}",
+        nproc=1,
+        mthread=1,
+        pipe=True,
+    )
+    with open(f"{path}/run.log", "w") as f:
+        f.write(out)
+    status[flag] = s
+    if s == 0:
+        amp[flag] = checkerboard_amplitude(collect("Nd", path=path, info=False))
+
+assert status["true"] == 0, "flag-on run failed; see data-upwind-true/run.log"
+amp_on = amp["true"]
+
+# 1. Saturation premise: the limiter must actually be saturated where the
+# mode lives, otherwise the test is not exercising the advective regime
+# collect keeps x guards but strips y guards by default, so slice x only
+dnn = collect("Dnnd", path="data-upwind-true", info=False)
+dmax = collect("Dnn_max_d", path="data-upwind-true", info=False)
+wsat = np.mean(dnn[-1, 2:-2, :, 0] / dmax[-1, 2:-2, :, 0])
+print(f"mean saturation ratio Dnn/Dnn_max (flag on, final state): {wsat:.3f}")
+assert wsat > 0.5, "background not saturated: test premise not met"
+
+# 2. The mode decays with the flag on
+decay_factor = amp_on[-1] / amp_on[0]
+print(
+    f"flag on : amplitude {amp_on[0]:.3e} -> {amp_on[-1]:.3e} "
+    f"(factor {decay_factor:.3e})"
+)
+assert decay_factor < 0.2, "odd-even mode did not decay with upwinding enabled"
+
+# 3. Differential check against the central scheme
+if status["false"] == 0:
+    amp_off = amp["false"]
+    print(
+        f"flag off: amplitude {amp_off[0]:.3e} -> {amp_off[-1]:.3e} "
+        f"(factor {amp_off[-1] / amp_off[0]:.3e})"
+    )
+    assert amp_on[-1] < 0.5 * amp_off[-1], (
+        "upwinding did not damp the mode faster than the central scheme"
+    )
+else:
+    print("flag-off run failed (uncontrolled mode); skipping differential check")
+
+# Informational: measured early decay rate vs the donor-cell prediction at
+# the Nyquist mode, gamma = 2 * w * flux_limit * vth / dx, with
+# vth = 0.25*sqrt(8 Tn / (pi AA)) and dx the normalised cell width taken
+# from the dump (the input dx is SI metres, normalised by rho_s0 on load)
+flim, AA, Tn0 = 0.1, 2.0, 1.0
+# radial cell width in normalised (rho_s0) units: dr = dx/sqrt(g11) -- the
+# dump's dx is a flux-like coordinate spacing, normalised by rho_s0^2*Bnorm
+dx2d = collect("dx", path="data-upwind-true", info=False)
+g11 = collect("g11", path="data-upwind-true", info=False)
+dxn = float(np.mean((dx2d / np.sqrt(g11))[2:-2, :]))
+vth = 0.25 * np.sqrt(8.0 * Tn0 / (np.pi * AA))
+gamma_pred = 2.0 * wsat * flim * vth / dxn
+t_arr = collect("t_array", path="data-upwind-true", info=False)
+# fit over the first decade of decay only (later the amplitude floors on the
+# projection residual of the evolving background)
+mask = amp_on > 0.1 * amp_on[0]
+if mask.sum() > 2:
+    slope = np.polyfit(t_arr[mask], np.log(amp_on[mask]), 1)[0]
+    print(
+        f"measured early decay rate {-slope:.4f}, predicted {gamma_pred:.4f} "
+        f"(ratio {-slope / gamma_pred:.2f})"
+    )
+
+print("=> Test passed")
+exit(0)

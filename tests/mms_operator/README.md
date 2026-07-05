@@ -2,7 +2,7 @@ MMS tests of differential operators used in Hermes-3
 ====================================================
 
 These tests are designed to test that for any given
-differential operator of two arguments `L(a,f)` 
+differential operator of two arguments `L(a,f)`
 returns the expected result for a known `a`, `f`, and
 contravariant metric coefficients, i.e., we compute
 a symbolic result
@@ -27,3 +27,14 @@ The tests can be extended to include new operators by including
 new operators in `const auto differential_operators` in `main.cxx`
 and in `"differential_operator_list":` from the `test_input` dictionary
 in the python test scripts `orthogonal_test.py` or `nonorthogonal_test.py`.
+
+`weighted_upwind_test.py` tests `Div_a_Grad_perp_weighted_upwind_flows`,
+which blends the face coefficient between the central average and the
+donor-cell (upwind) value using a weight field `w` (set via `mesh:w`) and
+a smoothed gradient-sign switch with scale `mesh:upwind_eps`. It runs two
+regimes against the same symbolic target: `w = 0` must converge at order 2
+(identical to `Div_a_Grad_perp_flows`), and `w = 1` must converge at order
+1 (donor-cell dissipation). The `w = 1` entry uses the optional fourth
+element of `differential_operator_list` (a maximum permitted convergence
+order) to catch an upwind branch that is silently inactive, which would
+otherwise pass by converging at order 2.

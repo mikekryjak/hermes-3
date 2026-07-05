@@ -72,6 +72,14 @@ private:
       gradient_ceiling_from_grid; ///< Derive per-cell gradient_ceiling_D from local radial cell width
   BoutReal flux_limiter_sharpness; ///< Sharpness of flux limiter transition
 
+  bool weighted_upwind_perp_adv;   ///< Blend perp advective fluxes towards donor-cell
+                                   ///< upwinding where the flux limiter saturates
+  BoutReal upwind_sign_smoothing;  ///< Smoothing scale of the upwind gradient-sign
+                                   ///< switch [difference of ln(Pn) across a face]
+  BoutReal upwind_weight_exponent; ///< Exponent applied to the saturation ratio to
+                                   ///< form the upwind weight
+  Field3D sat_weight; ///< Face-blending weight (Dnn/Dnn_max)^p for saturation upwinding
+
   bool sheath_ydown, sheath_yup;
 
   BoutReal density_floor; ///< Minimum Nn used when dividing NVn by Nn to get Vn.

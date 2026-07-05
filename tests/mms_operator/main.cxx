@@ -56,6 +56,17 @@ public:
   std::function<Field3D(const Field3D&, const Field3D&, Field3D&, Field3D&)> func;
 };
 
+// Class used to store weighted-upwind operators: (a, f, w, eps) inputs,
+// where w is a face-blending weight field and eps the sign-smoothing scale,
+// plus two flow diagnostics
+class nameandfunction6 {
+public:
+  std::string name;
+  std::function<Field3D(const Field3D&, const Field3D&, const Field3D&, BoutReal,
+                        Field3D&, Field3D&)>
+      func;
+};
+
 // List of tested operators of 1 arguments
 const auto differential_operators_1_arg = {
     nameandfunction1{"Div_par(f)", [](const Field3D& f) { return Div_par(f); }},
@@ -104,6 +115,16 @@ const auto differential_operators_4_arg = {
           return Div_a_Grad_perp_flows(a, f, flow_xlow, flow_ylow);
         }},
 };
+// List of tested operators taking a face-blending weight field `w` and a
+// sign-smoothing scale `eps` (read from mesh:upwind_eps)
+const auto differential_operators_weighted = {
+    nameandfunction6{"Div_a_Grad_perp_weighted_upwind_flows(a, f, w)",
+                     [](const Field3D& a, const Field3D& f, const Field3D& w,
+                        BoutReal eps, Field3D& flow_xlow, Field3D& flow_ylow) {
+                       return Div_a_Grad_perp_weighted_upwind_flows(a, f, w, eps,
+                                                                    flow_xlow, flow_ylow);
+                     }},
+};
 
 int main(int argc, char** argv) {
   BoutInitialise(argc, argv);
@@ -139,6 +160,17 @@ int main(int argc, char** argv) {
   mesh->get(f, "f", 0.0, false);
   mesh->communicate(f);
   dump["f"] = f;
+
+  // Face-blending weight field for the weighted upwind operators
+  // (0 = central everywhere; defaults to 0 when absent from the input)
+  Field3D w{mesh};
+  mesh->get(w, "w", 0.0, false);
+  mesh->communicate(w);
+  dump["w"] = w;
+
+  // Sign-smoothing scale for the weighted upwind operators, in units of the
+  // difference of f across a cell face
+  const BoutReal upwind_eps = Options::root()["mesh"]["upwind_eps"].withDefault(1.0e-8);
 
   // diagnostic variables
   Field3D flow_xlow{mesh};
@@ -235,6 +267,23 @@ int main(int argc, char** argv) {
       if (difop.name.compare(differential_operator_name) == 0) {
         // Get result of applying the named differential operator
         const Field3D result = difop.func(a, f, flow_xlow, flow_ylow);
+        dump[outname] = result;
+        dump[outname].setAttributes({
+            {"operator", difop.name},
+        });
+        // Get expected result from input file
+        Field3D expected_result{mesh};
+        mesh->get(expected_result, expectedname, 0.0, false);
+        dump[expectedname] = expected_result;
+        // dump diagnostics
+        dump[outname_flow_xlow] = flow_xlow;
+        dump[outname_flow_ylow] = flow_ylow;
+      }
+    }
+    for (const auto& difop : differential_operators_weighted) {
+      if (difop.name.compare(differential_operator_name) == 0) {
+        // Get result of applying the named differential operator
+        const Field3D result = difop.func(a, f, w, upwind_eps, flow_xlow, flow_ylow);
         dump[outname] = result;
         dump[outname].setAttributes({
             {"operator", difop.name},

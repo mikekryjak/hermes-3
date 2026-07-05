@@ -1,0 +1,83 @@
+# Odd-even (checkerboard) mode decay on a saturated neutral background.
+#
+# 1D-in-x slab with an exponential neutral pressure profile and a fixed, high
+# collisionality so that the neutral flux limiter is deeply saturated
+# (Dnn ~ Dnn_max << Dnn_unlimited). The initial condition seeds a grid-scale
+# odd-even perturbation on Nd ONLY (Pd is smooth): a pure coefficient-mode.
+# The central scheme's face-averaged coefficient gives exactly zero flux
+# response to this mode (the averages cancel), so it does not decay; the
+# donor-cell blending enabled by weighted_upwind_perp_adv damps it at the
+# Nyquist rate gamma ~ 2 * w * flux_limit * vth / dx.
+#
+# NOTE: mesh dx is in SI metres and is normalised by rho_s0 ~ 1.02e-3 m
+# (default Bnorm = 1 T, Tnorm = 100 eV), so dx = 1e-3 gives a normalised cell
+# width of ~1 rho_s0. With 32 cells, |grad ln Pn| ~ 4/31.4 ~ 0.13 and
+# Dnn_max ~ 0.22 << Dnn_unlimited = 50: deeply saturated.
+#
+# The runtest script runs this input twice (flag off/on, overridden on the
+# command line) and compares the odd-even amplitude histories. With
+# gamma ~ 0.057 (normalised), t = 60 gives a decay factor of ~0.03.
+
+nout = 60
+timestep = 1.0
+
+[mesh]
+nx = 36      # 32 interior cells
+ny = 4
+nz = 1
+
+dx = 1e-3    # SI metres: ~1 rho_s0 per cell after normalisation
+dy = 1.0
+dz = 1.0
+
+J = 1  # Identity metric
+
+symmetricGlobalX = true   # cell centres at x = (i + 0.5)/32
+
+[solver]
+mxstep = 100000
+
+[hermes]
+components = d
+
+[d]
+type = neutral_mixed
+
+AA = 2
+diagnose = true
+
+# No parallel dynamics: isolate the perpendicular advective flux
+evolve_momentum = false
+neutral_conduction = false
+neutral_viscosity = false
+lax_flux = false
+
+# Fixed collision frequency (normalised), low enough that
+# Dnn_unlimited = Tn/(AA nu) = 50 >> Dnn_max ~ 0.22: deeply saturated
+collisionality_override = 0.01
+
+# Limiter configuration: saturated, regularised, no ceiling
+flux_limit = 0.1
+combined_limiters = true
+double_count_lmax = false
+legacy_thermal_speed = false
+legacy_limiter_form = false
+regularise_denominator = true
+gradient_floor_D = 1e-4
+gradient_ceiling_D = 0.0
+D_perp_grad_only = true
+
+# Saturation upwinding: overridden on the command line by runtest
+weighted_upwind_perp_adv = false
+upwind_sign_smoothing = 1e-3
+
+[Nd]
+# Exponential background with a 3% grid-scale odd-even seed on the DENSITY
+# only. The sin term evaluates to (-1)^i at cell centres with
+# symmetricGlobalX. The face difference of ln(Pn) is 0.125 >> the sign
+# smoothing scale, and Pd is smooth so the seed is a pure coefficient mode.
+function = exp(-4 * x) * (1 + 0.03 * sin(pi * 32 * x))
+
+[Pd]
+# Smooth pressure: no odd-even seed (Tn carries the inverse perturbation)
+function = exp(-4 * x)

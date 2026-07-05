@@ -71,6 +71,17 @@ const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f);
 /// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind_flows(const Field3D& a, const Field3D& f,
                                            Field3D& flux_xlow, Field3D& flux_ylow);
+/// Same but with a smooth per-face blend between the central face coefficient
+/// and donor-cell upwinding, controlled by the weight field w in [0, 1]
+/// (intended: the flux limiter saturation ratio Dnn / Dnn_max, so that
+/// upwinding engages only where the transport is saturated i.e. advective).
+/// w = 0 recovers Div_a_Grad_perp_flows; w = 1 with |df| >> eps recovers
+/// Div_a_Grad_perp_upwind_flows. eps sets the scale of the smoothed
+/// gradient-sign switch, in units of the difference of f across a cell face.
+const Field3D Div_a_Grad_perp_weighted_upwind_flows(const Field3D& a, const Field3D& f,
+                                                    const Field3D& w, BoutReal eps,
+                                                    Field3D& flux_xlow,
+                                                    Field3D& flux_ylow);
 
 /// Version with energy flow diagnostic
 Field3D Div_par_K_Grad_par_mod(const Field3D& k, const Field3D& f, Field3D& flow_ylow,

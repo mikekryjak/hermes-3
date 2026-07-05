@@ -297,6 +297,41 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                                "transport (legacy behaviour)?")
                           .withDefault<bool>(false);
 
+  weighted_upwind_perp_adv =
+      options["weighted_upwind_perp_adv"]
+          .doc("Blend the perpendicular advective flux discretisation towards "
+               "donor-cell upwinding where the flux limiter saturates, using the "
+               "saturation ratio Dnn/Dnn_max as the per-face weight. Adds grid-scale "
+               "dissipation only where the transport is advective; the unsaturated "
+               "(diffusive) regime keeps the central scheme.")
+          .withDefault<bool>(false);
+
+  // Read unconditionally so these can stay in an input file while
+  // weighted_upwind_perp_adv is toggled (e.g. from the command line)
+  // without tripping the unused-options check.
+  upwind_sign_smoothing =
+      options["upwind_sign_smoothing"]
+          .doc("Smoothing scale of the gradient-sign switch in the saturation "
+               "upwinding, in units of the difference of ln(Pn) across a cell face. "
+               "Should be well below the face difference at resolved fronts "
+               "(order 0.1-1); of order gradient_floor_D times the cell width in "
+               "normalised units.")
+          .withDefault<BoutReal>(1e-3);
+  upwind_weight_exponent =
+      options["upwind_weight_exponent"]
+          .doc("Exponent p applied to the saturation ratio, w = (Dnn/Dnn_max)^p. "
+               "p > 1 delays the onset of upwinding to deeper saturation.")
+          .withDefault<BoutReal>(1.0);
+
+  if (weighted_upwind_perp_adv) {
+    if (nonorthogonal_operators) {
+      throw BoutException("{}: weighted_upwind_perp_adv is not implemented for "
+                          "nonorthogonal_operators",
+                          name);
+    }
+    sat_weight = 0.0;
+  }
+
   // Optionally output time derivatives
   output_ddt =
       options["output_ddt"].doc("Save derivatives to output?").withDefault<bool>(false);
@@ -829,6 +864,26 @@ void NeutralMixed::finally(const Options& state) {
   DnnNn.applyBoundary();
   DnnNVn.applyBoundary();
 
+  if (weighted_upwind_perp_adv) {
+    // Face-blending weight for the saturation upwinding: the limiter saturation
+    // ratio Dnn / Dnn_max in [0, 1], to a power. Zero (pure central scheme) when
+    // the flux limiter is not active. Guard cells are filled by communication and
+    // a Neumann boundary so the operator can form face weights at the domain edge.
+    sat_weight = zeroFrom(Dnn);
+    if (flux_limit_adv > 0.0) {
+      if (upwind_weight_exponent == 1.0) {
+        BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) { sat_weight[i] = Dnn[i] / Dmax[i]; }
+      } else {
+        BOUT_FOR(i, Dnn.getRegion("RGN_NOBNDRY")) {
+          sat_weight[i] = pow(Dnn[i] / Dmax[i], upwind_weight_exponent);
+        }
+      }
+    }
+    mesh->communicate(sat_weight);
+    sat_weight.clearParallelSlices();
+    sat_weight.applyBoundary("neumann");
+  }
+
   if (sheath_ydown) {
     for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
       for (int jz = 0; jz < mesh->LocalNz; jz++) {
@@ -885,6 +940,10 @@ void NeutralMixed::finally(const Options& state) {
   if (nonorthogonal_operators) {
     ddt(Nn) +=
         Div_a_Grad_perp_nonorthog(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
+  } else if (weighted_upwind_perp_adv) {
+    ddt(Nn) += Div_a_Grad_perp_weighted_upwind_flows(DnnNn, logPnlim, sat_weight,
+                                                     upwind_sign_smoothing,
+                                                     pf_adv_perp_xlow, pf_adv_perp_ylow);
   } else {
     ddt(Nn) += Div_a_Grad_perp_flows(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
   }
@@ -909,6 +968,11 @@ void NeutralMixed::finally(const Options& state) {
     ddt(Pn) +=
         (5. / 3)
         * Div_a_Grad_perp_nonorthog(DnnPn, logPnlim, ef_adv_perp_xlow, ef_adv_perp_ylow);
+  } else if (weighted_upwind_perp_adv) {
+    ddt(Pn) += (5. / 3)
+               * Div_a_Grad_perp_weighted_upwind_flows(
+                   DnnPn, logPnlim, sat_weight, upwind_sign_smoothing, ef_adv_perp_xlow,
+                   ef_adv_perp_ylow);
   } else {
     ddt(Pn) +=
         (5. / 3)
@@ -965,6 +1029,10 @@ void NeutralMixed::finally(const Options& state) {
     if (nonorthogonal_operators) {
       ddt(NVn) +=
           Div_a_Grad_perp_nonorthog(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
+    } else if (weighted_upwind_perp_adv) {
+      ddt(NVn) += Div_a_Grad_perp_weighted_upwind_flows(
+          DnnNVn, logPnlim, sat_weight, upwind_sign_smoothing, mf_adv_perp_xlow,
+          mf_adv_perp_ylow);
     } else {
       ddt(NVn) +=
           Div_a_Grad_perp_flows(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
@@ -1240,6 +1308,15 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " maximum diffusion coefficient"},
                     {"source", "neutral_mixed"}});
+    if (weighted_upwind_perp_adv) {
+      set_with_attrs(state[fmt::format("upwind_weight_{}", name)], sat_weight,
+                     {{"time_dimension", "t"},
+                      {"units", ""},
+                      {"conversion", 1.0},
+                      {"standard_name", "upwind weight"},
+                      {"long_name", name + " saturation upwind face-blending weight"},
+                      {"source", "neutral_mixed"}});
+    }
     set_with_attrs(state[fmt::format("K{}_mfp_pseudo_coll", name)], nu_pseudo_mfp,
                    {{"time_dimension", "t"},
                     {"units", "s^-1"},

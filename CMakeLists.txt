@@ -350,6 +350,7 @@ if(HERMES_TESTS)
   hermes_add_integrated_test(diffusion)
   hermes_add_integrated_test(evolve_density)
   hermes_add_integrated_test(neutral_mixed)
+  hermes_add_integrated_test(neutral-upwind-checkerboard)
   hermes_add_integrated_test(vorticity)
   hermes_add_integrated_test(sod-shock)
   hermes_add_integrated_test(sod-shock-energy)
@@ -403,6 +404,12 @@ if(HERMES_TESTS)
       WORKING_DIRECTORY tests/mms_operator/
       COMMAND python3 nonorthogonal_test.py)
     set_tests_properties(differential_operators_mms_nonorthogonal
+                         PROPERTIES LABELS integration)
+    add_test(
+      NAME differential_operators_mms_weighted_upwind
+      WORKING_DIRECTORY tests/mms_operator/
+      COMMAND python3 weighted_upwind_test.py)
+    set_tests_properties(differential_operators_mms_weighted_upwind
                          PROPERTIES LABELS integration)
     add_test(
       NAME rhs_mms_neutral_mixed

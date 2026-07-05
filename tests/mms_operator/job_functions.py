@@ -26,10 +26,16 @@ def run_manufactured_solutions_test(test_input):
     # the minimum number of points in each of the x, y, z grids in the test
     # the number of points in the ith test is ngrid*i
     nnbase = test_input["ngrid"]
-    # list of [name, symbolic string, expected convergence order]
+    # list of [name, symbolic string, expected convergence order] with an
+    # optional 4th element giving a maximum permitted convergence order
+    # (used to catch schemes converging at a *higher* order than designed,
+    # e.g. an upwind branch that is silently inactive)
     differential_operator_test_list = test_input["differential_operator_list"]
     astr = test_input["a_string"]
     fstr = test_input["f_string"]
+    # optional inputs for the weighted upwind operators
+    wstr = test_input.get("w_string", None)
+    upwind_eps = test_input.get("upwind_eps", None)
     g11_str = test_input["g11_string"]
     g22_str = test_input["g22_string"]
     g33_str = test_input["g33_string"]
@@ -52,7 +58,7 @@ def run_manufactured_solutions_test(test_input):
             os.system("mkdir " + workdir)
         # copy template
         file = workdir + "/BOUT.inp"
-        os.system(f"cp BOUT.inp.template " + file)
+        os.system("cp BOUT.inp.template " + file)
         # update with mesh values for test
         nn = nnbase * (i + 1)  # number of points in each grid
         dd = 2.0 * np.pi / nn  # y z grid spacing, z, y on [0, 2pi]
@@ -86,6 +92,14 @@ def run_manufactured_solutions_test(test_input):
    a = {astr}
    f = {fstr}
    """
+            if wstr is not None:
+                mesh_string += f"""
+   w = {wstr}
+   """
+            if upwind_eps is not None:
+                mesh_string += f"""
+   upwind_eps = {upwind_eps}
+   """
             n_operators = len(differential_operator_test_list)
             mesh_string += f"""
    # information about differential operators
@@ -93,7 +107,7 @@ def run_manufactured_solutions_test(test_input):
    """
             for i in range(0, n_operators):
                 mesh_string += f"""
-   differential_operator_name_{i} = {differential_operator_test_list[i][0]}          
+   differential_operator_name_{i} = {differential_operator_test_list[i][0]}
    expected_result_{i} = {differential_operator_test_list[i][1]}
    """
             file.write(mesh_string.replace("**", "^"))
@@ -127,7 +141,7 @@ def run_manufactured_solutions_test(test_input):
     # saving them in a list `datasets`
     datasets = []
     for workdir in workdirs:
-        boutmeshpath = workdir + "/" + f"BOUT.0.nc"
+        boutmeshpath = workdir + "/BOUT.0.nc"
         boutinppath = workdir + "/" + "BOUT.inp"
         datasets.append(
             open_boutdataset(
@@ -139,17 +153,14 @@ def run_manufactured_solutions_test(test_input):
     for i, values in enumerate(differential_operator_test_list):
         label = values[0]
         expected_slope = values[2]
+        max_slope = values[3] if len(values) > 3 else None
         l2norm = []
         nylist = []
         dylist = []
         for m in range(0, ntest):
             numerical = collectvar(datasets, f"result_{i}", m)
             expected = collectvar(datasets, f"expected_result_{i}", m)
-            xx = collectvar(datasets, "x_input", m)
             yy = collectvar(datasets, "y_input", m)
-            zz = collectvar(datasets, "z_input", m)
-            ff = collectvar(datasets, "f", m)
-            aa = collectvar(datasets, "a", m)
 
             error_values = (numerical - expected)[s]
             thisl2 = np.sqrt(np.mean(error_values**2))
@@ -184,7 +195,15 @@ def run_manufactured_solutions_test(test_input):
         # record results in dictionary and plot
         # label = attrs["operator"] + " : f = " + attrs["inp"]
         # label = "FV::Div_a_Grad_perp(a, f)"
-        plot_data[label] = [dylist, l2norm, fitfunc, slope, offset, expected_slope]
+        plot_data[label] = [
+            dylist,
+            l2norm,
+            fitfunc,
+            slope,
+            offset,
+            expected_slope,
+            max_slope,
+        ]
 
     # close the datasets
     for dataset in datasets:
@@ -196,7 +215,7 @@ def run_manufactured_solutions_test(test_input):
 
         ifig = 0
         for key, variable_set in plot_data.items():
-            (xaxis, yaxis, fit, slope, offset, expected_slope) = variable_set
+            (xaxis, yaxis, fit, slope, offset, expected_slope, max_slope) = variable_set
             plt.figure()
             plt.plot(
                 xaxis, yaxis, "x-", label="$\\epsilon(\\mathcal{L}\\ast f)$: " + key
@@ -207,7 +226,7 @@ def run_manufactured_solutions_test(test_input):
                 "x-",
                 label="$\\propto \\Delta^{{{:.2f}}}$".format(expected_slope),
             )
-            if not fit is None:
+            if fit is not None:
                 plt.plot(
                     xaxis,
                     fit,
@@ -217,7 +236,7 @@ def run_manufactured_solutions_test(test_input):
             plt.xlabel("$\\Delta = 1/N_y$")
             plt.title(key)
             plt.legend()
-            if not fit is None:
+            if fit is not None:
                 plt.gca().set_yscale("log")
                 plt.gca().set_xscale("log")
             else:
@@ -227,7 +246,7 @@ def run_manufactured_solutions_test(test_input):
                 plt.show()
             plt.close()
             ifig += 1
-    except:
+    except Exception:
         # Plotting could fail for any number of reasons, and the actual
         # error raised may depend on, among other things, the current
         # matplotlib backend, so catch everything
@@ -238,21 +257,33 @@ def run_manufactured_solutions_test(test_input):
     output_message = ""
     for key, variable_set in plot_data.items():
         this_test_success = True
-        (xaxis, yaxis, fit, slope, offset, expected_slope) = variable_set
-        # check slope of fit ~= 2
+        (xaxis, yaxis, fit, slope, offset, expected_slope, max_slope) = variable_set
+        # check slope of fit ~= expected order
         slope_min = 0.975 * expected_slope
-        if not slope is None:
+        if slope is not None:
             if slope < slope_min:
+                this_test_success = False
+            # optional upper bound: fail if the scheme converges at a higher
+            # order than designed (e.g. an upwind branch silently inactive)
+            if (max_slope is not None) and (slope > max_slope):
                 this_test_success = False
         else:  # or permit near-zero errors, but nothing larger
             for error in yaxis:
                 if error > 1.0e-10:
                     this_test_success = False
         # append test message and set global success variable
+        slope_str = f"{slope:.2f}" if slope is not None else "n/a"
+        bounds_str = f"min {slope_min:.2f}" + (
+            f", max {max_slope:.2f}" if max_slope is not None else ""
+        )
         if this_test_success:
-            output_message += f"{key} convergence order {slope:.2f} > {slope_min:.2f} => Test passed \n"
+            output_message += (
+                f"{key} convergence order {slope_str} ({bounds_str}) => Test passed \n"
+            )
         else:
-            output_message += f"{key} convergence order {slope:.2f} < {slope_min:.2f} => Test failed \n"
+            output_message += (
+                f"{key} convergence order {slope_str} ({bounds_str}) => Test failed \n"
+            )
             success = False
 
     return success, output_message
@@ -300,7 +331,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
     if not os.path.isdir(base_test_dir):
         os.system("mkdir " + base_test_dir)
     # create sub-directory, if required
-    if not sub_test_dir is None:
+    if sub_test_dir is not None:
         base_test_dir = base_test_dir + "/" + sub_test_dir
         if not os.path.isdir(base_test_dir):
             os.system("mkdir " + base_test_dir)
@@ -315,7 +346,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
             os.system("mkdir " + workdir)
         # copy template
         file = workdir + "/BOUT.inp"
-        os.system(f"cp BOUT.inp.neutral_mixed.template " + file)
+        os.system("cp BOUT.inp.neutral_mixed.template " + file)
         # update with mesh values for test
         nn = nnbase * (i + 1)  # number of points in each grid
         dd = 2.0 * np.pi / nn  # y z grid spacing, z, y on [0, 2pi]
@@ -328,7 +359,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
    symmetricGlobalX = true
    extrapolate_y = false
    extrapolate_x= false
-   
+
    nx = {nn}
    dx = {ddx}
    ny = {nn}
@@ -349,7 +380,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
    g_23 = {g_23_str}
    g_13 = {g_13_str}
    J = {J_str}
-   
+
    Nd_src = {source_Nd_string}
    Pd_src = {source_Pd_string}
    NVd_src = {source_NVd_string}
@@ -382,7 +413,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
    function = {Nd_string}
    bndry_core = neumann
    bndry_all = neumann
-   
+
    [Pd]
    function = {Pd_string}
    bndry_core = neumann
@@ -417,11 +448,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
     # no guard cells in z
     s = slice(None), slice(2, -2), slice(1, -1), slice(None)
     # s = slice(1, 2), slice(2, -2), slice(1, -1), slice(None)
-    sxyz = slice(2, -2), slice(1, -1), slice(None)
     sxy = slice(2, -2), slice(1, -1)
-    sx = slice(2, -2)
-    sy = slice(1, -1)
-    sz = slice(None)
     # a dictionary of plot data, filled later on
     plot_data = dict()
 
@@ -429,7 +456,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
     # saving them in a list `datasets`
     datasets = []
     for workdir in workdirs:
-        boutmeshpath = workdir + "/" + f"BOUT.dmp.0.nc"
+        boutmeshpath = workdir + "/BOUT.dmp.0.nc"
         boutinppath = workdir + "/" + "BOUT.inp"
         datasets.append(
             open_boutdataset(
@@ -538,7 +565,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
                 "x-",
                 label="$\\propto \\Delta^{{{:.2f}}}$".format(expected_slope),
             )
-            if not fit is None:
+            if fit is not None:
                 plt.plot(
                     xaxis,
                     fit,
@@ -548,7 +575,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
             plt.xlabel("$\\Delta = 1/N_y$")
             plt.title(key)
             plt.legend()
-            if not fit is None:
+            if fit is not None:
                 plt.gca().set_yscale("log")
                 plt.gca().set_xscale("log")
             else:
@@ -558,7 +585,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
                 plt.show()
             plt.close()
             ifig += 1
-    except:
+    except Exception:
         # Plotting could fail for any number of reasons, and the actual
         # error raised may depend on, among other things, the current
         # matplotlib backend, so catch everything
@@ -572,7 +599,7 @@ def run_neutral_mixed_manufactured_solutions_test(test_input):
         (xaxis, yaxis, fit, slope, offset, expected_slope) = variable_set
         # check slope of fit ~= 2
         slope_min = 0.975 * expected_slope
-        if not slope is None:
+        if slope is not None:
             if slope < slope_min:
                 this_test_success = False
         else:  # or permit near-zero errors, but nothing larger
