@@ -135,6 +135,30 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                         flux_limiter_sharpness);
   }
 
+  fluxsplit_perp_adv =
+      options["fluxsplit_perp_adv"]
+          .doc("Use the face-local convective/diffusive flux split (UEDGE form) for "
+               "the neutral perpendicular advective fluxes (density/pressure/"
+               "momentum)? Requires flux_limit > 0.")
+          .withDefault<bool>(false);
+  upwind_sign_smoothing =
+      options["upwind_sign_smoothing"]
+          .doc("Donor-cell sign-smoothing scale (eps) for fluxsplit_perp_adv, in "
+               "face-difference-of-ln(Pn) units.")
+          .withDefault(1.0e-2);
+
+  if (fluxsplit_perp_adv && flux_limit <= 0.0) {
+    throw BoutException(
+        "{}: fluxsplit_perp_adv requires flux_limit > 0 (got {:g}); it replaces "
+        "the flux limiter's advective X-flux and would silently do nothing",
+        name, flux_limit);
+  }
+  if (fluxsplit_perp_adv && nonorthogonal_operators) {
+    throw BoutException("{}: fluxsplit_perp_adv is not implemented for "
+                        "nonorthogonal_operators and would be silently ignored",
+                        name);
+  }
+
   diffusion_limit = options["diffusion_limit"]
                         .doc("Upper limit on diffusion coefficient [m^2/s]. <0 means off")
                         .withDefault(-1.0)
@@ -247,6 +271,12 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   DnnNn.setBoundary(std::string("Dnn") + name);
   DnnPn.setBoundary(std::string("Dnn") + name);
   DnnNVn.setBoundary(std::string("Dnn") + name);
+
+  if (fluxsplit_perp_adv) {
+    // Face-flux inputs of the flux-split operator get the same BC as Dnn
+    Dnn_unlimited.setBoundary(std::string("Dnn") + name);
+    avth.setBoundary(std::string("Dnn") + name);
+  }
 
   substitutePermissions("name", {name});
   substitutePermissions(
@@ -476,6 +506,13 @@ void NeutralMixed::finally(const Options& state) {
     const Field3D g_reg = sqrt(g_ceil + SQ(limiter_gradient_floor));
 
     Dmax = flux_limit * 0.25 * vn_bar / g_reg;
+
+    if (fluxsplit_perp_adv) {
+      // Free-streaming scale (Dmax numerator) for the flux-split operator's face
+      // ratio R = Dnn_unlimited * g_face / avth. Same alpha*vth as Dmax, so R is
+      // calibrated to the identical cap but built from the LOCAL FACE gradient.
+      avth = flux_limit * 0.25 * vn_bar;
+    }
   }
 
   // Hard upper limit on the diffusion coefficient. Clamp Dmax down to whichever
@@ -516,6 +553,16 @@ void NeutralMixed::finally(const Options& state) {
   DnnPn.applyBoundary();
   DnnNn.applyBoundary();
   DnnNVn.applyBoundary();
+
+  if (fluxsplit_perp_adv && flux_limit > 0.0) {
+    // The flux split reads Dnn_unlimited and avth at faces up to the domain
+    // boundary; give them the same guard-cell treatment as the DnnNn coefficients.
+    // Boundaries are set once in the constructor: setBoundary() re-reads options
+    // and logs, so it must never run per-RHS.
+    mesh->communicate(Dnn_unlimited, avth);
+    Dnn_unlimited.applyBoundary();
+    avth.applyBoundary();
+  }
 
   if (sheath_ydown) {
     for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
@@ -573,6 +620,11 @@ void NeutralMixed::finally(const Options& state) {
   if (nonorthogonal_operators) {
     ddt(Nn) +=
         Div_a_Grad_perp_nonorthog(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
+  } else if (fluxsplit_perp_adv && flux_limit > 0.0) {
+    ddt(Nn) += Div_a_Grad_perp_fluxsplit_flows(
+        DnnNn, Nnlim, Dnn_unlimited, avth, logPnlim, upwind_sign_smoothing,
+        limiter_gradient_ceiling, limiter_gradient_floor, pf_adv_perp_xlow,
+        pf_adv_perp_ylow);
   } else {
     ddt(Nn) += Div_a_Grad_perp_flows(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
   }
@@ -597,6 +649,12 @@ void NeutralMixed::finally(const Options& state) {
     ddt(Pn) +=
         (5. / 3)
         * Div_a_Grad_perp_nonorthog(DnnPn, logPnlim, ef_adv_perp_xlow, ef_adv_perp_ylow);
+  } else if (fluxsplit_perp_adv && flux_limit > 0.0) {
+    ddt(Pn) += (5. / 3)
+               * Div_a_Grad_perp_fluxsplit_flows(
+                   DnnPn, Pnlim, Dnn_unlimited, avth, logPnlim, upwind_sign_smoothing,
+                   limiter_gradient_ceiling, limiter_gradient_floor, ef_adv_perp_xlow,
+                   ef_adv_perp_ylow);
   } else {
     ddt(Pn) +=
         (5. / 3)
@@ -653,6 +711,11 @@ void NeutralMixed::finally(const Options& state) {
     if (nonorthogonal_operators) {
       ddt(NVn) +=
           Div_a_Grad_perp_nonorthog(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
+    } else if (fluxsplit_perp_adv && flux_limit > 0.0) {
+      ddt(NVn) += Div_a_Grad_perp_fluxsplit_flows(
+          DnnNVn, NVn, Dnn_unlimited, avth, logPnlim, upwind_sign_smoothing,
+          limiter_gradient_ceiling, limiter_gradient_floor, mf_adv_perp_xlow,
+          mf_adv_perp_ylow);
     } else {
       ddt(NVn) +=
           Div_a_Grad_perp_flows(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);

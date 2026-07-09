@@ -893,6 +893,296 @@ const Field3D Div_a_Grad_perp_flows(const Field3D& a, const Field3D& f,
   return result;
 }
 
+/// Face-local convective/diffusive flux split (UEDGE electron-conduction form)
+/// for the saturation-limited neutral advective flux, applied to the X perp-flux.
+///
+/// The cell-centre limiter builds D from a centred gradient, so the saturated
+/// flux (D -> Dmax, gradient-independent) is carried by the central scheme, which
+/// leaves the constant-coefficient checkerboard EXACTLY undamped. This operator
+/// rebuilds the X face flux locally as
+///
+///   F_{i+1/2} = D_unl^f * G * (N_face + R * N_donor) / (1 + R)^2 ,
+///
+/// with G the central metric face-gradient factor (as Div_a_Grad_perp_flows),
+/// R = D_unl^f * g_reg / (alpha * vth^f) the face saturation ratio from the
+/// REGULARISED physical face gradient
+///
+///   g_reg = sqrt( g_phys^2 C^2 / (g_phys^2 + C^2) + F^2 ) ,
+///   g_phys = sqrt(g11^f) |df| / dx^f ,
+///
+/// i.e. the same smooth ceiling C (grad_ceiling) and floor F (grad_floor) the
+/// cell-centre limiter applies to its gradient, so at N_face = N_donor the face
+/// flux is the EXACT face-local analogue of the gamma=1 harmonic blend. The
+/// ceiling caps R at steep fronts, keeping a diffusive channel open there (a
+/// raw-gradient R shuts the face off and starves floor-pinned holes — the 19c
+/// collapse, implementation_log 2026-07-09); C -> inf recovers the raw form.
+/// N_face is the central face average and N_donor the smoothly-upwinded
+/// donor-cell density. In the diffusive limit (R->0) F is identical to the
+/// central operator (order 2); in saturation it limits to the (ceiling-capped)
+/// free-streaming flux carried on the donor channel, damping the coefficient
+/// checkerboard. Domain-boundary faces keep N_donor = N_face (no donor
+/// selection on guard-fed faces).
+///
+/// The Y (g23 cross) and Z fluxes reuse the limited coefficient a = D*Nch,
+/// central and verbatim from Div_a_Grad_perp_flows; both are inert in the 2D
+/// orthogonal neutral cases this targets (a 3D Z-split is a future generalisation).
+const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& Nch,
+                                              const Field3D& Dunl, const Field3D& avth,
+                                              const Field3D& f, BoutReal eps,
+                                              BoutReal grad_ceiling, BoutReal grad_floor,
+                                              Field3D& flow_xlow, Field3D& flow_ylow) {
+  ASSERT2(a.getLocation() == f.getLocation());
+
+  Mesh* mesh = a.getMesh();
+
+  Field3D result{zeroFrom(f)};
+
+  Coordinates* coord = f.getCoordinates();
+
+  // Zero all flows
+  flow_xlow = 0.0;
+  flow_ylow = 0.0;
+
+  // Flux in x: face-local convective/diffusive split
+
+  int xs = mesh->xstart - 1;
+  int xe = mesh->xend;
+
+  // Regularisation constants for the face gradient (see doc comment above)
+  const BoutReal C2 = SQ(grad_ceiling);
+  const BoutReal F2 = SQ(grad_floor);
+
+  for (int i = xs; i <= xe; i++) {
+    // Constraint 4: no donor selection on domain-boundary faces (guard-fed,
+    // sign flaps at dlnP~0). Keep the limiting, drop only the upwind there.
+    const bool boundary_face = (i == mesh->xstart - 1 && mesh->firstX())
+                               || (i == mesh->xend && mesh->lastX());
+    for (int j = mesh->ystart; j <= mesh->yend; j++) {
+      for (int k = 0; k < mesh->LocalNz; k++) {
+        // Calculate flux from i to i+1
+        const BoutReal df = f(i + 1, j, k) - f(i, j, k);
+        const BoutReal sumdx = coord->dx(i, j, k) + coord->dx(i + 1, j, k);
+
+        // Central metric face-gradient factor (identical to Div_a_Grad_perp_flows)
+        const BoutReal G = (coord->J(i, j, k) * coord->g11(i, j, k)
+                            + coord->J(i + 1, j, k) * coord->g11(i + 1, j, k))
+                           * df / sumdx;
+
+        // Physical face gradient, regularised with the same smooth ceiling and
+        // floor as the cell-centre limiter's gradient (keeps a diffusive
+        // channel open at steep fronts; see doc comment)
+        const BoutReal g11f = 0.5 * (coord->g11(i, j, k) + coord->g11(i + 1, j, k));
+        const BoutReal dxf = 0.5 * sumdx;
+        const BoutReal gphys2 = g11f * SQ(df) / SQ(dxf);
+        const BoutReal greg = sqrt(gphys2 * C2 / (gphys2 + C2) + F2);
+
+        // avth = alpha * vth = the free-streaming scale (Dmax numerator in
+        // neutral_mixed), so R here is calibrated to the same cap as the
+        // cell-centre limiter, but built from the LOCAL FACE gradient.
+        const BoutReal Dunlf = 0.5 * (Dunl(i, j, k) + Dunl(i + 1, j, k));
+        const BoutReal avthf = 0.5 * (avth(i, j, k) + avth(i + 1, j, k));
+        const BoutReal R = Dunlf * greg / (avthf + 1e-30);
+
+        // Central face density, and the smoothly-upwinded donor density
+        const BoutReal Nface = 0.5 * (Nch(i, j, k) + Nch(i + 1, j, k));
+        const BoutReal s = (df == 0.0) ? 0.0 : df / sqrt(SQ(df) + SQ(eps));
+        const BoutReal Ndonor =
+            boundary_face ? Nface
+                          : Nface + 0.5 * s * (Nch(i + 1, j, k) - Nch(i, j, k));
+
+        const BoutReal fout = Dunlf * G * (Nface + R * Ndonor) / SQ(1.0 + R);
+
+        result(i, j, k) += fout / (coord->dx(i, j, k) * coord->J(i, j, k));
+        result(i + 1, j, k) -= fout / (coord->dx(i + 1, j, k) * coord->J(i + 1, j, k));
+
+        // Flow will be positive in the positive coordinate direction
+        flow_xlow(i + 1, j, k) = -1.0 * fout * coord->dy(i, j) * coord->dz(i, j);
+      }
+    }
+  }
+
+  // Y and Z fluxes require Y derivatives
+
+  // Fields containing values along the magnetic field
+  Field3D fup(mesh), fdown(mesh);
+  Field3D aup(mesh), adown(mesh);
+
+  Field3D g23up(mesh), g23down(mesh);
+  Field3D g_23up(mesh), g_23down(mesh);
+  Field3D Jup(mesh), Jdown(mesh);
+  Field3D dyup(mesh), dydown(mesh);
+  Field3D dzup(mesh), dzdown(mesh);
+  Field3D Bxyup(mesh), Bxydown(mesh);
+
+  // Values on this y slice (centre).
+  // This is needed because toFieldAligned may modify the field
+  Field3D fc = f;
+  Field3D ac = a;
+
+  Field3D g23c = coord->g23;
+  Field3D g_23c = coord->g_23;
+  Field3D Jc = coord->J;
+  Field3D dyc = coord->dy;
+  Field3D dzc = coord->dz;
+  Field3D Bxyc = coord->Bxy;
+
+  // Result of the Y and Z fluxes
+  Field3D yzresult(mesh);
+  yzresult.allocate();
+
+  if (f.hasParallelSlices() && a.hasParallelSlices()) {
+    // Both inputs have yup and ydown
+
+    fup = f.yup();
+    fdown = f.ydown();
+
+    aup = a.yup();
+    adown = a.ydown();
+  } else {
+    // At least one input doesn't have yup/ydown fields.
+    // Need to shift to/from field aligned coordinates
+
+    fup = fdown = fc = toFieldAligned(f);
+    aup = adown = ac = toFieldAligned(a);
+
+    yzresult.setDirectionY(YDirectionType::Aligned);
+    flow_ylow.setDirectionY(YDirectionType::Aligned);
+  }
+
+  if (bout::build::use_metric_3d) {
+    // 3D Metric, need yup/ydown fields.
+    // Requires previous communication of metrics
+    // -- should insert communication here?
+    if (!coord->g23.hasParallelSlices() || !coord->g_23.hasParallelSlices()
+        || !coord->dy.hasParallelSlices() || !coord->dz.hasParallelSlices()
+        || !coord->Bxy.hasParallelSlices() || !coord->J.hasParallelSlices()) {
+      throw BoutException("metrics have no yup/down: Maybe communicate in init?");
+    }
+
+    g23up = coord->g23.yup();
+    g23down = coord->g23.ydown();
+
+    g_23up = coord->g_23.yup();
+    g_23down = coord->g_23.ydown();
+
+    Jup = coord->J.yup();
+    Jdown = coord->J.ydown();
+
+    dyup = coord->dy.yup();
+    dydown = coord->dy.ydown();
+
+    dzup = coord->dz.yup();
+    dzdown = coord->dz.ydown();
+
+    Bxyup = coord->Bxy.yup();
+    Bxydown = coord->Bxy.ydown();
+
+  } else {
+    // No 3D metrics
+    // Need to shift to/from field aligned coordinates
+    g23up = g23down = g23c = toFieldAligned(coord->g23);
+    g_23up = g_23down = g_23c = toFieldAligned(coord->g_23);
+    Jup = Jdown = Jc = toFieldAligned(coord->J);
+    dyup = dydown = dyc = toFieldAligned(coord->dy);
+    dzup = dzdown = dzc = toFieldAligned(coord->dz);
+    Bxyup = Bxydown = Bxyc = toFieldAligned(coord->Bxy);
+  }
+
+  // Y flux
+
+  for (int i = mesh->xstart; i <= mesh->xend; i++) {
+    for (int j = mesh->ystart; j <= mesh->yend; j++) {
+      for (int k = 0; k < mesh->LocalNz; k++) {
+        // Calculate flux between j and j+1
+        int kp = (k + 1) % mesh->LocalNz;
+        int km = (k - 1 + mesh->LocalNz) % mesh->LocalNz;
+
+        BoutReal coef =
+            0.5
+            * (g_23c(i, j, k) / SQ(Jc(i, j, k) * Bxyc(i, j, k))
+               + g_23up(i, j + 1, k) / SQ(Jup(i, j + 1, k) * Bxyup(i, j + 1, k)));
+
+        // Calculate Z derivative at y boundary
+        BoutReal dfdz =
+            0.5 * (fc(i, j, kp) - fc(i, j, km) + fup(i, j + 1, kp) - fup(i, j + 1, km))
+            / (dzc(i, j, k) + dzup(i, j + 1, k));
+
+        // Y derivative
+        BoutReal dfdy =
+            2. * (fup(i, j + 1, k) - fc(i, j, k)) / (dyup(i, j + 1, k) + dyc(i, j, k));
+
+        BoutReal fout =
+            0.25 * (ac(i, j, k) + aup(i, j + 1, k))
+            * (Jc(i, j, k) * g23c(i, j, k) + Jup(i, j + 1, k) * g23up(i, j + 1, k))
+            * (dfdz - coef * dfdy);
+
+        yzresult(i, j, k) = fout / (dyc(i, j, k) * Jc(i, j, k));
+
+        // Calculate flux between j and j-1
+        coef =
+            0.5
+            * (g_23c(i, j, k) / SQ(Jc(i, j, k) * Bxyc(i, j, k))
+               + g_23down(i, j - 1, k) / SQ(Jdown(i, j - 1, k) * Bxydown(i, j - 1, k)));
+
+        dfdz = 0.5
+               * (fc(i, j, kp) - fc(i, j, km) + fdown(i, j - 1, kp) - fdown(i, j - 1, km))
+               / (dzc(i, j, k) + dzdown(i, j - 1, k));
+
+        dfdy = 2. * (fc(i, j, k) - fdown(i, j - 1, k))
+               / (dyc(i, j, k) + dydown(i, j - 1, k));
+
+        fout = 0.25 * (ac(i, j, k) + adown(i, j - 1, k))
+               * (Jc(i, j, k) * g23c(i, j, k) + Jdown(i, j - 1, k) * g23down(i, j - 1, k))
+               * (dfdz - coef * dfdy);
+
+        yzresult(i, j, k) -= fout / (dyc(i, j, k) * Jc(i, j, k));
+
+        // Flow will be positive in the positive coordinate direction
+        flow_ylow(i, j, k) = -1.0 * fout * coord->dx(i, j) * coord->dz(i, j);
+      }
+    }
+  }
+
+  // Z flux
+
+  for (int i = mesh->xstart; i <= mesh->xend; i++) {
+    for (int j = mesh->ystart; j <= mesh->yend; j++) {
+      for (int k = 0; k < mesh->LocalNz; k++) {
+        // Calculate flux between k and k+1
+        int kp = (k + 1) % mesh->LocalNz;
+
+        // Coefficient in front of df/dy term
+        BoutReal coef = g_23c(i, j, k)
+                        / (dyup(i, j + 1, k) + 2. * dyc(i, j, k) + dydown(i, j - 1, k))
+                        / SQ(Jc(i, j, k) * Bxyc(i, j, k));
+
+        BoutReal fout =
+            0.25 * (ac(i, j, k) + ac(i, j, kp))
+            * (Jc(i, j, k) * coord->g33(i, j, k) + Jc(i, j, kp) * coord->g33(i, j, kp))
+            * ( // df/dz
+                (fc(i, j, kp) - fc(i, j, k)) / dzc(i, j, k)
+                // - g_yz * df/dy / SQ(J*B)
+                - coef
+                      * (fup(i, j + 1, k) + fup(i, j + 1, kp) - fdown(i, j - 1, k)
+                         - fdown(i, j - 1, kp)));
+
+        yzresult(i, j, k) += fout / (Jc(i, j, k) * dzc(i, j, k));
+        yzresult(i, j, kp) -= fout / (Jc(i, j, kp) * dzc(i, j, kp));
+      }
+    }
+  }
+  // Check if we need to transform back
+  if (f.hasParallelSlices() && a.hasParallelSlices()) {
+    result += yzresult;
+  } else {
+    result += fromFieldAligned(yzresult);
+    flow_ylow = fromFieldAligned(flow_ylow);
+  }
+
+  return result;
+}
+
+
 // Div ( a Grad_perp(f) )  -- diffusion
 /// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f) {

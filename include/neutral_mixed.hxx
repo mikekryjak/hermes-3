@@ -48,6 +48,9 @@ private:
   Field3D Dnn;                   ///< Diffusion coefficient
   Field3D Dnn_unlimited, Dmax;   ///< Unlimited and max Dnn
   Field3D DnnNn, DnnPn, DnnTn, DnnNVn; ///< Used for operators
+  bool fluxsplit_perp_adv;         ///< Face-local flux split for neutral perp advection?
+  BoutReal upwind_sign_smoothing;  ///< Donor sign-smoothing scale (eps) for the flux split
+  Field3D avth;                    ///< alpha*vth = free-streaming scale (Dmax numerator)
   BoutReal flux_limit;                 ///< Diffusive flux limit
   BoutReal flux_limiter_sharpness;     ///< Sharpness of the diffusive flux limiter
   BoutReal limiter_gradient_floor;     ///< Floor for gradient in Dmax denominator
