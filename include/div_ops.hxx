@@ -64,6 +64,19 @@ const Field2D Laplace_FV(const Field2D& k, const Field2D& f);
 /// Takes Div_a_Grad_perp from BOUT++ and adds flows
 const Field3D Div_a_Grad_perp_flows(const Field3D& a, const Field3D& f,
                                     Field3D& flux_xlow, Field3D& flux_ylow);
+/// Face-local convective/diffusive flux split (UEDGE electron-conduction form) of
+/// the saturation-limited neutral advective flux, on the X perp-flux. `a = D*Nch`
+/// is the limited coefficient (used for the central Y/Z fluxes); `Nch`, `Dunl`
+/// (unlimited diffusivity) and `avth` (= alpha*vth, the free-streaming scale =
+/// Dmax numerator) build the face-local split; `eps` is the donor sign-smoothing;
+/// `grad_ceiling`/`grad_floor` regularise the face gradient in the saturation
+/// ratio exactly as the cell-centre limiter regularises its gradient.
+/// See div_ops.cxx for the formulation.
+const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& Nch,
+                                              const Field3D& Dunl, const Field3D& avth,
+                                              const Field3D& f, BoutReal eps,
+                                              BoutReal grad_ceiling, BoutReal grad_floor,
+                                              Field3D& flux_xlow, Field3D& flux_ylow);
 /// Same but with upwinding
 /// WARNING: Causes checkerboarding in neutral_mixed integrated test
 const Field3D Div_a_Grad_perp_upwind(const Field3D& a, const Field3D& f);
