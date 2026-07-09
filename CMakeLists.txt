@@ -416,6 +416,12 @@ if(HERMES_TESTS)
       WORKING_DIRECTORY tests/mms_operator/
       COMMAND python3 neutral_mixed_ddt_test.py)
     set_tests_properties(rhs_mms_neutral_mixed PROPERTIES LABELS integration)
+    add_test(
+      NAME differential_operators_mms_fluxsplit
+      WORKING_DIRECTORY tests/mms_operator/
+      COMMAND python3 fluxsplit_test.py)
+    set_tests_properties(differential_operators_mms_fluxsplit
+                         PROPERTIES LABELS integration)
   endif()
 endif()
 

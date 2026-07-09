@@ -920,8 +920,9 @@ const Field3D Div_a_Grad_perp_flows(const Field3D& a, const Field3D& f,
 /// donor-cell density. In the diffusive limit (R->0) F is identical to the
 /// central operator (order 2); in saturation it limits to the (ceiling-capped)
 /// free-streaming flux carried on the donor channel, damping the coefficient
-/// checkerboard. Domain-boundary faces keep N_donor = N_face (no donor
-/// selection on guard-fed faces).
+/// checkerboard. Domain-boundary faces use the SAME scheme as interior faces
+/// (donor may be the BC-filled guard cell): special-casing them is an O(1)
+/// local inconsistency (MMS, 2026-07-09).
 ///
 /// The Y (g23 cross) and Z fluxes reuse the limited coefficient a = D*Nch,
 /// central and verbatim from Div_a_Grad_perp_flows; both are inert in the 2D
@@ -953,10 +954,11 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
   const BoutReal F2 = SQ(grad_floor);
 
   for (int i = xs; i <= xe; i++) {
-    // Constraint 4: no donor selection on domain-boundary faces (guard-fed,
-    // sign flaps at dlnP~0). Keep the limiting, drop only the upwind there.
-    const bool boundary_face = (i == mesh->xstart - 1 && mesh->firstX())
-                               || (i == mesh->xend && mesh->lastX());
+    // NB domain-boundary faces are NOT special-cased: dropping the donor there
+    // (the original "constraint 4") is an O(1) scheme inconsistency at the
+    // first/last interior cells that degrades global convergence to O(sqrt(dx))
+    // (MMS, implementation_log 2026-07-09). The guard value is BC-filled and is
+    // a legitimate donor; the eps smoothing handles sign flaps as elsewhere.
     for (int j = mesh->ystart; j <= mesh->yend; j++) {
       for (int k = 0; k < mesh->LocalNz; k++) {
         // Calculate flux from i to i+1
@@ -986,9 +988,7 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
         // Central face density, and the smoothly-upwinded donor density
         const BoutReal Nface = 0.5 * (Nch(i, j, k) + Nch(i + 1, j, k));
         const BoutReal s = (df == 0.0) ? 0.0 : df / sqrt(SQ(df) + SQ(eps));
-        const BoutReal Ndonor =
-            boundary_face ? Nface
-                          : Nface + 0.5 * s * (Nch(i + 1, j, k) - Nch(i, j, k));
+        const BoutReal Ndonor = Nface + 0.5 * s * (Nch(i + 1, j, k) - Nch(i, j, k));
 
         const BoutReal fout = Dunlf * G * (Nface + R * Ndonor) / SQ(1.0 + R);
 
