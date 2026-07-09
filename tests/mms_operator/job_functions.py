@@ -87,6 +87,9 @@ def run_manufactured_solutions_test(test_input):
    f = {fstr}
    """
             n_operators = len(differential_operator_test_list)
+            # optional extra [mesh] entries (e.g. auxiliary fields/scalars an
+            # operator needs beyond the standard a and f)
+            mesh_string += test_input.get("extra_mesh_string", "")
             mesh_string += f"""
    # information about differential operators
    n_operators = {n_operators}
@@ -122,6 +125,8 @@ def run_manufactured_solutions_test(test_input):
 
     # a dictionary of plot data, filled later on
     plot_data = dict()
+    # optional per-operator maximum allowed convergence order (None = no bound)
+    max_slopes = dict()
 
     # open the series of "workdir/BOUT.0.nc" files,
     # saving them in a list `datasets`
@@ -139,6 +144,10 @@ def run_manufactured_solutions_test(test_input):
     for i, values in enumerate(differential_operator_test_list):
         label = values[0]
         expected_slope = values[2]
+        # optional 4th entry: maximum allowed order. Catches an operator whose
+        # low-order term is silently inactive (e.g. a dead upwind branch shows
+        # order 2 where order 1 is expected).
+        max_slope = values[3] if len(values) > 3 else None
         l2norm = []
         nylist = []
         dylist = []
@@ -185,6 +194,7 @@ def run_manufactured_solutions_test(test_input):
         # label = attrs["operator"] + " : f = " + attrs["inp"]
         # label = "FV::Div_a_Grad_perp(a, f)"
         plot_data[label] = [dylist, l2norm, fitfunc, slope, offset, expected_slope]
+        max_slopes[label] = max_slope
 
     # close the datasets
     for dataset in datasets:
@@ -241,18 +251,22 @@ def run_manufactured_solutions_test(test_input):
         (xaxis, yaxis, fit, slope, offset, expected_slope) = variable_set
         # check slope of fit ~= 2
         slope_min = 0.975 * expected_slope
+        slope_max = max_slopes.get(key)
         if not slope is None:
             if slope < slope_min:
+                this_test_success = False
+            if slope_max is not None and slope > slope_max:
                 this_test_success = False
         else:  # or permit near-zero errors, but nothing larger
             for error in yaxis:
                 if error > 1.0e-10:
                     this_test_success = False
         # append test message and set global success variable
+        bound_msg = f" (max {slope_max:.2f})" if slope_max is not None else ""
         if this_test_success:
-            output_message += f"{key} convergence order {slope:.2f} > {slope_min:.2f} => Test passed \n"
+            output_message += f"{key} convergence order {slope:.2f} > {slope_min:.2f}{bound_msg} => Test passed \n"
         else:
-            output_message += f"{key} convergence order {slope:.2f} < {slope_min:.2f} => Test failed \n"
+            output_message += f"{key} convergence order {slope:.2f} vs bounds [{slope_min:.2f}{bound_msg}] => Test failed \n"
             success = False
 
     return success, output_message
