@@ -27,6 +27,11 @@ views
 
 # Tests
 **/Testing/**
+
+# Docker
 docker/work/
 docker/.env
 docker/docker-compose.override.yaml
+
+kotov*png
+kotov*gif
