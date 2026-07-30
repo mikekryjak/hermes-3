@@ -160,72 +160,99 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                "using neutral_lmax. Intended for numerical protection only.")
           .withDefault<bool>(false);
 
-  gradient_floor_D =
-      options["gradient_floor_D"]
-          .doc("Gradient floor used to regularise the D limiter denominator. "
-               "Normalised inverse-length units.")
-          .withDefault<BoutReal>(0.1);
+  // Limiter denominator regularisation.
+  //
+  // The D and kappa denominators are inverse lengths — |grad log Pn| and
+  // |grad Tn| / Tn — so their floor and ceiling are in SI [1/m]. The eta
+  // denominator is |grad Vn|, a velocity shear, so it has its own floor and
+  // ceiling in SI [1/s]. Sharing one option across both was the source of a
+  // real error: the same literal means different physics in the two channels.
+  //
+  // Option names and units match the separate-neutral-fluxlim branch, so a
+  // scan can be mapped between them without conversion. Note the rename from
+  // gradient_floor_D / _kappa / _eta and gradient_ceiling_D: an input using
+  // the old names now lands in the log's unused-options list rather than being
+  // read with the wrong units.
+  limiter_gradient_floor =
+      options["limiter_gradient_floor"]
+          .doc("Floor for the D and kappa limiter denominators in SI [1/m]. "
+               "Higher values improve robustness in shallow gradients but may "
+               "affect the answer.")
+          .withDefault<BoutReal>(10.0)
+      * meters;
 
-  gradient_floor_kappa =
-      options["gradient_floor_kappa"]
-          .doc("Gradient floor used to regularise kappa limiter denominators. "
-               "Normalised inverse-length units.")
-          .withDefault<BoutReal>(gradient_floor_D);
+  limiter_gradient_floor_eta =
+      options["limiter_gradient_floor_eta"]
+          .doc("Floor for |grad Vn| in the eta limiter denominators in SI [1/s]. "
+               "NOTE the units: the viscous denominator is a velocity shear, not "
+               "an inverse length, so this does NOT default off the D limiter "
+               "floor. The default is the value that normalises to 0.001 at "
+               "Bnorm = 1 T, which is what the ST40 candidate scans ran.")
+          .withDefault<BoutReal>(9.5788e4)
+      * seconds;
 
-  gradient_floor_eta =
-      options["gradient_floor_eta"]
-          .doc("Gradient floor used to regularise eta limiter denominators. "
-               "Normalised inverse-length units.")
-          .withDefault<BoutReal>(gradient_floor_D);
+  // The uniform ceiling, used unless the from-grid mode below overrides it.
+  const BoutReal uniform_ceiling =
+      options["limiter_gradient_ceiling"]
+          .doc("Ceiling for the D and kappa limiter denominators in SI [1/m]: caps "
+               "the gradient from above, preventing the caps from collapsing to "
+               "zero in steep-gradient regions. Paired with limiter_gradient_floor. "
+               "0 = disabled. See limiter_gradient_ceiling_from_grid to derive it "
+               "from the mesh instead of setting it directly.")
+          .withDefault<BoutReal>(0.0)
+      * meters;
 
-  const BoutReal gradient_ceiling_value =
-      options["gradient_ceiling_D"]
-          .doc("Gradient ceiling for the D limiter denominator: caps |grad log Pn| from "
-               "above, preventing D_max from collapsing to zero in steep-gradient "
-               "regions. "
-               "Paired with gradient_floor_D. Normalised inverse-length units. "
-               "0 = disabled. See gradient_ceiling_from_grid to derive it from the "
-               "mesh instead of setting it directly.")
-          .withDefault<BoutReal>(0.0);
+  limiter_gradient_ceiling_eta =
+      options["limiter_gradient_ceiling_eta"]
+          .doc("Ceiling for |grad Vn| in the eta limiter denominators in SI [1/s]. "
+               "Paired with limiter_gradient_floor_eta. 0 = disabled. Not derivable "
+               "from the grid: a shear rate has no cell-width equivalent.")
+          .withDefault<BoutReal>(0.0)
+      * seconds;
 
-  gradient_ceiling_from_grid =
-      options["gradient_ceiling_from_grid"]
-          .doc("Compute a per-cell gradient_ceiling_D from the grid at startup as "
-               "gradient_ceiling_multiplier / (local radial cell width), so the "
-               "limiter cannot react to gradients on scales the local mesh cannot "
-               "resolve. Overrides gradient_ceiling_D.")
+  use_limiter_gradient_ceiling_eta = limiter_gradient_ceiling_eta > 0.0;
+  limiter_gradient_ceiling_eta_sq = SQ(limiter_gradient_ceiling_eta);
+
+  limiter_gradient_ceiling_from_grid =
+      options["limiter_gradient_ceiling_from_grid"]
+          .doc("Compute a per-cell limiter_gradient_ceiling from the grid at startup "
+               "as limiter_gradient_ceiling_multiplier / (local radial cell width), "
+               "so the limiter cannot react to gradients on scales the local mesh "
+               "cannot resolve. Overrides limiter_gradient_ceiling.")
           .withDefault<bool>(false);
 
-  use_gradient_ceiling = gradient_ceiling_from_grid or (gradient_ceiling_value > 0.0);
+  use_limiter_gradient_ceiling =
+      limiter_gradient_ceiling_from_grid or (uniform_ceiling > 0.0);
 
-  if (gradient_ceiling_from_grid) {
-    const BoutReal gradient_ceiling_multiplier =
-        options["gradient_ceiling_multiplier"]
+  if (limiter_gradient_ceiling_from_grid) {
+    const BoutReal limiter_gradient_ceiling_multiplier =
+        options["limiter_gradient_ceiling_multiplier"]
             .doc("Multiplies the local inverse radial cell width 1/dr to give the "
-                 "per-cell gradient_ceiling_D. E.g. 0.25 caps the limiter gradient "
-                 "at scale lengths shorter than 4 local radial cell widths.")
+                 "per-cell limiter_gradient_ceiling. E.g. 0.25 caps the limiter "
+                 "gradient at scale lengths shorter than 4 local radial cell widths.")
             .withDefault<BoutReal>(0.25);
 
     Coordinates* coords = mesh->getCoordinates();
     // Radial cell width dr = dx / |grad x| = dx / sqrt(g11), normalised units.
     // Metrics are defined in guard cells, so the ceiling field is too.
+    // This branch is already normalised — do NOT scale it by meters.
     const auto dr = coords->dx / sqrt(coords->g11);
-    gradient_ceiling_D = gradient_ceiling_multiplier / dr;
+    limiter_gradient_ceiling = limiter_gradient_ceiling_multiplier / dr;
 
-    const BoutReal ceil_min = min(gradient_ceiling_D, true, "RGN_NOBNDRY");
-    const BoutReal ceil_max = max(gradient_ceiling_D, true, "RGN_NOBNDRY");
+    const BoutReal ceil_min = min(limiter_gradient_ceiling, true, "RGN_NOBNDRY");
+    const BoutReal ceil_max = max(limiter_gradient_ceiling, true, "RGN_NOBNDRY");
     output_info.write(
         "\t{:s} gradient ceiling from grid: radial cell width {:.4e} - {:.4e} m, "
-        "multiplier = {:.3g} -> gradient_ceiling_D in [{:.4e}, {:.4e}]\n",
-        name, gradient_ceiling_multiplier / ceil_max * meters,
-        gradient_ceiling_multiplier / ceil_min * meters, gradient_ceiling_multiplier,
-        ceil_min, ceil_max);
+        "multiplier = {:.3g} -> limiter_gradient_ceiling in [{:.4e}, {:.4e}]\n",
+        name, limiter_gradient_ceiling_multiplier / ceil_max * meters,
+        limiter_gradient_ceiling_multiplier / ceil_min * meters,
+        limiter_gradient_ceiling_multiplier, ceil_min, ceil_max);
   } else {
-    gradient_ceiling_D = gradient_ceiling_value;
+    limiter_gradient_ceiling = uniform_ceiling;
   }
 
-  if (use_gradient_ceiling) {
-    gradient_ceiling_sq = gradient_ceiling_D * gradient_ceiling_D;
+  if (use_limiter_gradient_ceiling) {
+    limiter_gradient_ceiling_sq = limiter_gradient_ceiling * limiter_gradient_ceiling;
   }
 
   diffusion_limit = options["diffusion_limit"]
@@ -314,8 +341,8 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
           .doc("Smoothing scale of the gradient-sign switch in the saturation "
                "upwinding, in units of the difference of ln(Pn) across a cell face. "
                "Should be well below the face difference at resolved fronts "
-               "(order 0.1-1); of order gradient_floor_D times the cell width in "
-               "normalised units.")
+               "(order 0.1-1); of order limiter_gradient_floor times the cell width "
+               "in normalised units.")
           .withDefault<BoutReal>(1e-3);
   upwind_weight_exponent =
       options["upwind_weight_exponent"]
@@ -675,10 +702,10 @@ void NeutralMixed::finally(const Options& state) {
           // Smooth ceiling: g_soft^2 = g^2 * g_ceil^2 / (g^2 + g_ceil^2)
           // → g_soft → g for g << g_ceil, g_soft → g_ceil for g >> g_ceil (C-inf)
           const Field3D g_sq_eff =
-              use_gradient_ceiling
-                  ? g_sq * gradient_ceiling_sq / (g_sq + gradient_ceiling_sq)
+              use_limiter_gradient_ceiling
+                  ? g_sq * limiter_gradient_ceiling_sq / (g_sq + limiter_gradient_ceiling_sq)
                   : g_sq;
-          Dmax = flux_limit_adv * Vnth_pf / sqrt(g_sq_eff + SQ(gradient_floor_D));
+          Dmax = flux_limit_adv * Vnth_pf / sqrt(g_sq_eff + SQ(limiter_gradient_floor));
         } else {
           Dmax = flux_limit_adv * Vnth_pf / (abs(grad_logPnlim));
         }
@@ -734,19 +761,25 @@ void NeutralMixed::finally(const Options& state) {
       } else {
 
         if (regularise_denominator) {
-          const Field3D g_sq_D = Grad_perp(logPnlim) * Grad_perp(logPnlim);
-          const Field3D g_sq_D_eff =
-              use_gradient_ceiling
-                  ? g_sq_D * gradient_ceiling_sq / (g_sq_D + gradient_ceiling_sq)
-                  : g_sq_D;
-          Field3D denominator_D = sqrt(g_sq_D_eff + SQ(gradient_floor_D));
+          // Same smooth ceiling for D and kappa: both denominators are inverse
+          // lengths, so they share limiter_gradient_ceiling.
+          const auto apply_ceiling = [&](const Field3D& g_sq) -> Field3D {
+            return use_limiter_gradient_ceiling
+                       ? g_sq * limiter_gradient_ceiling_sq
+                             / (g_sq + limiter_gradient_ceiling_sq)
+                       : g_sq;
+          };
 
-          // TODO: Implement gradient ceiling for kappa and eta if needed
+          const Field3D g_sq_D = Grad_perp(logPnlim) * Grad_perp(logPnlim);
+          Field3D denominator_D =
+              sqrt(apply_ceiling(g_sq_D) + SQ(limiter_gradient_floor));
+
+          const Field3D g_sq_Kperp = (Grad_perp(Tn) / Tnlim) * (Grad_perp(Tn) / Tnlim);
+          const Field3D g_sq_Kpar = (Grad_par(Tn) / Tnlim) * (Grad_par(Tn) / Tnlim);
           Field3D denominator_Kperp =
-              sqrt((Grad_perp(Tn) / Tnlim) * (Grad_perp(Tn) / Tnlim)
-                   + gradient_floor_kappa * gradient_floor_kappa);
-          Field3D denominator_Kpar = sqrt((Grad_par(Tn) / Tnlim) * (Grad_par(Tn) / Tnlim)
-                                          + gradient_floor_kappa * gradient_floor_kappa);
+              sqrt(apply_ceiling(g_sq_Kperp) + SQ(limiter_gradient_floor));
+          Field3D denominator_Kpar =
+              sqrt(apply_ceiling(g_sq_Kpar) + SQ(limiter_gradient_floor));
 
           Dmax = flux_limit_adv * Vnth_pf / denominator_D;
           kappa_n_max_perp = flux_limit_cond_perp * (Vnth_hf * Nnlim) / denominator_Kperp;
@@ -762,10 +795,20 @@ void NeutralMixed::finally(const Options& state) {
       }
 
       if (regularise_denominator) {
+        // Same smooth ceiling form as D and kappa, but in shear units.
+        const auto apply_ceiling_eta = [&](const Field3D& g_sq) -> Field3D {
+          return use_limiter_gradient_ceiling_eta
+                     ? g_sq * limiter_gradient_ceiling_eta_sq
+                           / (g_sq + limiter_gradient_ceiling_eta_sq)
+                     : g_sq;
+        };
+
+        const Field3D g_sq_etaperp = Grad_perp(Vn) * Grad_perp(Vn);
+        const Field3D g_sq_etapar = Grad_par(Vn) * Grad_par(Vn);
         Field3D denominator_etaperp =
-            sqrt(Grad_perp(Vn) * Grad_perp(Vn) + gradient_floor_eta * gradient_floor_eta);
+            sqrt(apply_ceiling_eta(g_sq_etaperp) + SQ(limiter_gradient_floor_eta));
         Field3D denominator_etapar =
-            sqrt(Grad_par(Vn) * Grad_par(Vn) + gradient_floor_eta * gradient_floor_eta);
+            sqrt(apply_ceiling_eta(g_sq_etapar) + SQ(limiter_gradient_floor_eta));
 
         eta_n_max_perp = flux_limit_visc_perp * Pnlim / denominator_etaperp;
         eta_n_max_par = flux_limit_visc_par * Pnlim / denominator_etapar;

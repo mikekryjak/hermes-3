@@ -61,15 +61,20 @@ private:
   BoutReal diffusion_limit; ///< Maximum diffusion coefficient
   BoutReal neutral_lmax;
   bool soft_mfp_floor; ///< Apply neutral_lmax pseudo-collisionality as a soft floor on nu
-  BoutReal gradient_floor_D;     ///< Smooth floor for D limiter denominator
-  BoutReal gradient_floor_kappa; ///< Smooth floor for kappa limiter denominators
-  BoutReal gradient_floor_eta;   ///< Smooth floor for eta limiter denominators
+  // Limiter denominator regularisation. The D and kappa denominators are inverse
+  // lengths; the eta denominator is a velocity shear, so it carries its own pair
+  // in its own units. All stored normalised.
+  BoutReal limiter_gradient_floor;     ///< Smooth floor for D and kappa limiter denominators
+  BoutReal limiter_gradient_floor_eta; ///< Smooth floor for eta limiter denominators
   Field3D
-      gradient_ceiling_D; ///< Smooth ceiling for D limiter denominator (uniform or per-cell)
-  Field3D gradient_ceiling_sq; ///< Precomputed square of gradient_ceiling_D
-  bool use_gradient_ceiling;   ///< Is the D gradient ceiling active?
+      limiter_gradient_ceiling; ///< Smooth ceiling for D and kappa denominators (uniform or per-cell)
+  Field3D limiter_gradient_ceiling_sq; ///< Precomputed square of limiter_gradient_ceiling
+  bool use_limiter_gradient_ceiling;   ///< Is the D and kappa gradient ceiling active?
+  BoutReal limiter_gradient_ceiling_eta;    ///< Smooth ceiling for eta denominators
+  BoutReal limiter_gradient_ceiling_eta_sq; ///< Precomputed square of the above
+  bool use_limiter_gradient_ceiling_eta;    ///< Is the eta gradient ceiling active?
   bool
-      gradient_ceiling_from_grid; ///< Derive per-cell gradient_ceiling_D from local radial cell width
+      limiter_gradient_ceiling_from_grid; ///< Derive per-cell limiter_gradient_ceiling from local radial cell width
   BoutReal flux_limiter_sharpness; ///< Sharpness of flux limiter transition
 
   bool weighted_upwind_perp_adv;   ///< Blend perp advective fluxes towards donor-cell
