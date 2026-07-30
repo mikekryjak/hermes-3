@@ -835,6 +835,31 @@ Larger values of :math:`\gamma` make the transition sharper. Setting
 ``diffusion_limit`` option can also impose a hard upper bound on
 :math:`D_{n,\max}`.
 
+Once the limiter is active the perpendicular flux is close to free
+streaming, and its magnitude no longer depends on the pressure gradient.
+A central face scheme then provides no damping of grid-scale (cell to
+cell) oscillations, which can slow the implicit solver considerably.
+Setting ``perp_upwind_blend = true`` blends the perpendicular advective
+fluxes of density, pressure and momentum from central towards
+donor-cell (upwind), with the weight
+
+.. math::
+   \begin{aligned}
+   w = \frac{D_n}{D_{n,\max}} ,
+   \end{aligned}
+
+evaluated at each cell face. Where the flux is unlimited
+(:math:`w \rightarrow 0`) the scheme is unchanged and remains second
+order; where it is saturated (:math:`w \rightarrow 1`) the transported
+quantity is taken from the upwind cell, which damps grid-scale
+oscillations without altering the flux cap. Because :math:`w` is formed
+from the limited :math:`D_n`, it follows ``flux_limiter_sharpness`` and
+``diffusion_limit`` automatically. The option ``upwind_sign_smoothing``
+sets the width, in units of the face difference of
+:math:`\ln P_n`, over which the upwind direction changes sign; it keeps
+the scheme differentiable for the implicit solver. ``perp_upwind_blend``
+requires ``flux_limit`` above zero.
+
 The neutral conductivity and viscosity coefficients, which control
 both the parallel and perpendicular diffusion of temperature and
 parallel momentum, are then calculated from the limited diffusion coefficient:

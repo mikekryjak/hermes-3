@@ -248,24 +248,18 @@ int main(int argc, char** argv) {
         dump[outname_flow_ylow] = flow_ylow;
       }
     }
-    // The flux-split operator takes extra face-split inputs, read here from the
-    // mesh section (fields Nch/Dunl/avth, scalars fluxsplit_eps /
-    // fluxsplit_grad_ceiling / fluxsplit_grad_floor), so it is dispatched
-    // specially rather than through the fixed-arity operator lists above.
-    if (differential_operator_name == "Div_a_Grad_perp_fluxsplit_flows(a, f)") {
-      Field3D Nch{mesh}, Dunl{mesh}, avth{mesh};
-      mesh->get(Nch, "Nch", 1.0, false);
-      mesh->get(Dunl, "Dunl", 1.0, false);
-      mesh->get(avth, "avth", 1.0, false);
-      mesh->communicate(Nch, Dunl, avth);
-      const BoutReal eps =
-          Options::root()["mesh"]["fluxsplit_eps"].withDefault(1.0e-2);
-      const BoutReal grad_ceiling =
-          Options::root()["mesh"]["fluxsplit_grad_ceiling"].withDefault(1.0e6);
-      const BoutReal grad_floor =
-          Options::root()["mesh"]["fluxsplit_grad_floor"].withDefault(0.0);
-      const Field3D result = Div_a_Grad_perp_fluxsplit_flows(
-          a, Nch, Dunl, avth, f, eps, grad_ceiling, grad_floor, flow_xlow, flow_ylow);
+    // The blended operator takes a second coefficient field `b` and a weight
+    // field `w`, read here from the mesh section along with the scalar
+    // `blend_eps`, so it is dispatched specially rather than through the
+    // fixed-arity operator lists above.
+    if (differential_operator_name == "Div_ab_Grad_perp_upwind_blend_flows(a, b, w, f)") {
+      Field3D b{mesh}, w{mesh};
+      mesh->get(b, "b", 1.0, false);
+      mesh->get(w, "w", 0.0, false);
+      mesh->communicate(b, w);
+      const BoutReal eps = Options::root()["mesh"]["blend_eps"].withDefault(1.0e-2);
+      const Field3D result =
+          Div_ab_Grad_perp_upwind_blend_flows(a, b, w, f, eps, flow_xlow, flow_ylow);
       dump[outname] = result;
       dump[outname].setAttributes({
           {"operator", differential_operator_name},

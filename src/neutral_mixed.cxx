@@ -135,26 +135,30 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                         flux_limiter_sharpness);
   }
 
-  fluxsplit_perp_adv =
-      options["fluxsplit_perp_adv"]
-          .doc("Use the face-local convective/diffusive flux split (UEDGE form) for "
-               "the neutral perpendicular advective fluxes (density/pressure/"
-               "momentum)? Requires flux_limit > 0.")
+  perp_upwind_blend =
+      options["perp_upwind_blend"]
+          .doc("Blend the perpendicular advective fluxes (density/pressure/momentum) "
+               "from central towards upwind where the flux limiter is active, with "
+               "weight Dnn/Dmax. Damps grid-scale oscillations in the saturated "
+               "state without changing the flux cap. Requires flux_limit > 0.")
           .withDefault<bool>(false);
   upwind_sign_smoothing =
       options["upwind_sign_smoothing"]
-          .doc("Donor-cell sign-smoothing scale (eps) for fluxsplit_perp_adv, in "
-               "face-difference-of-ln(Pn) units.")
+          .doc("Smoothing scale (eps) for the upwind direction switch in "
+               "perp_upwind_blend, in face-difference-of-ln(Pn) units.")
           .withDefault(1.0e-2);
 
-  if (fluxsplit_perp_adv && flux_limit <= 0.0) {
+  if (perp_upwind_blend && flux_limit <= 0.0) {
+    // Load-bearing, not cosmetic: with no flux limiter Dmax is left as a copy of
+    // Dnn_unlimited and the blend below is skipped, so the weight Dnn/Dmax would
+    // evaluate to 1 and silently make the scheme fully upwind everywhere.
     throw BoutException(
-        "{}: fluxsplit_perp_adv requires flux_limit > 0 (got {:g}); it replaces "
-        "the flux limiter's advective X-flux and would silently do nothing",
+        "{}: perp_upwind_blend requires flux_limit > 0 (got {:g}); its blend "
+        "weight Dnn/Dmax is only meaningful when the limiter is active",
         name, flux_limit);
   }
-  if (fluxsplit_perp_adv && nonorthogonal_operators) {
-    throw BoutException("{}: fluxsplit_perp_adv is not implemented for "
+  if (perp_upwind_blend && nonorthogonal_operators) {
+    throw BoutException("{}: perp_upwind_blend is not implemented for "
                         "nonorthogonal_operators and would be silently ignored",
                         name);
   }
@@ -272,10 +276,18 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
   DnnPn.setBoundary(std::string("Dnn") + name);
   DnnNVn.setBoundary(std::string("Dnn") + name);
 
-  if (fluxsplit_perp_adv) {
-    // Face-flux inputs of the flux-split operator get the same BC as Dnn
-    Dnn_unlimited.setBoundary(std::string("Dnn") + name);
-    avth.setBoundary(std::string("Dnn") + name);
+  if (perp_upwind_blend) {
+    // The blend weight is read at faces right up to the domain boundary, so its
+    // guard cells must continue the interior value: Neumann, NOT the dirichlet
+    // that Dnn uses. A dirichlet weight would go to zero on the boundary face
+    // and quietly return that face to the central scheme, which is the same
+    // O(1) boundary inconsistency that a hard scheme switch would cause. It
+    // would also feed the operator a negative guard value, outside the [0, 1]
+    // range the weight is required to stay in.
+    alloptions[std::string("upwind_weight") + name]["bndry_all"] =
+        alloptions[std::string("upwind_weight") + name]["bndry_all"].withDefault(
+            "neumann");
+    upwind_weight.setBoundary(std::string("upwind_weight") + name);
   }
 
   substitutePermissions("name", {name});
@@ -506,13 +518,6 @@ void NeutralMixed::finally(const Options& state) {
     const Field3D g_reg = sqrt(g_ceil + SQ(limiter_gradient_floor));
 
     Dmax = flux_limit * 0.25 * vn_bar / g_reg;
-
-    if (fluxsplit_perp_adv) {
-      // Free-streaming scale (Dmax numerator) for the flux-split operator's face
-      // ratio R = Dnn_unlimited * g_face / avth. Same alpha*vth as Dmax, so R is
-      // calibrated to the identical cap but built from the LOCAL FACE gradient.
-      avth = flux_limit * 0.25 * vn_bar;
-    }
   }
 
   // Hard upper limit on the diffusion coefficient. Clamp Dmax down to whichever
@@ -541,6 +546,19 @@ void NeutralMixed::finally(const Options& state) {
     }
   }
 
+  if (perp_upwind_blend) {
+    // How far the limiter has pushed Dnn towards its cap: 0 where the flux is
+    // free (keep the central scheme), approaching 1 where it is saturated (go
+    // upwind). Taking the ratio of the FINAL Dnn and Dmax, rather than
+    // rebuilding it from the limiter formula, is what makes the blend follow
+    // flux_limiter_sharpness and diffusion_limit automatically. It is bounded in
+    // [0, 1) for any sharpness, so it needs no clamping.
+    upwind_weight.allocate();
+    BOUT_FOR(i, upwind_weight.getRegion("RGN_NOBNDRY")) {
+      upwind_weight[i] = Dnn[i] / Dmax[i];
+    }
+  }
+
   mesh->communicate(Dnn);
   Dnn.clearParallelSlices();
   Dnn.applyBoundary();
@@ -554,14 +572,14 @@ void NeutralMixed::finally(const Options& state) {
   DnnNn.applyBoundary();
   DnnNVn.applyBoundary();
 
-  if (fluxsplit_perp_adv && flux_limit > 0.0) {
-    // The flux split reads Dnn_unlimited and avth at faces up to the domain
-    // boundary; give them the same guard-cell treatment as the DnnNn coefficients.
-    // Boundaries are set once in the constructor: setBoundary() re-reads options
+  if (perp_upwind_blend) {
+    // Fill the weight's guard cells before the operator reads them at the
+    // boundary faces (Neumann, set in the constructor - see the note there).
+    // Boundaries are SET once in the constructor: setBoundary() re-reads options
     // and logs, so it must never run per-RHS.
-    mesh->communicate(Dnn_unlimited, avth);
-    Dnn_unlimited.applyBoundary();
-    avth.applyBoundary();
+    mesh->communicate(upwind_weight);
+    upwind_weight.clearParallelSlices();
+    upwind_weight.applyBoundary();
   }
 
   if (sheath_ydown) {
@@ -620,11 +638,14 @@ void NeutralMixed::finally(const Options& state) {
   if (nonorthogonal_operators) {
     ddt(Nn) +=
         Div_a_Grad_perp_nonorthog(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
-  } else if (fluxsplit_perp_adv && flux_limit > 0.0) {
-    ddt(Nn) += Div_a_Grad_perp_fluxsplit_flows(
-        DnnNn, Nnlim, Dnn_unlimited, avth, logPnlim, upwind_sign_smoothing,
-        limiter_gradient_ceiling, limiter_gradient_floor, pf_adv_perp_xlow,
-        pf_adv_perp_ylow);
+  } else if (perp_upwind_blend) {
+    // Dnn is interpolated to the face, Nnlim is upwinded where the limiter is
+    // active. All three equations pass the same Dnn, weight and logPnlim, so
+    // they make the same upwind choice at every face - inconsistent choices
+    // between the fluxes reintroduce the checkerboarding this is here to remove.
+    ddt(Nn) += Div_ab_Grad_perp_upwind_blend_flows(Dnn, Nnlim, upwind_weight, logPnlim,
+                                                   upwind_sign_smoothing,
+                                                   pf_adv_perp_xlow, pf_adv_perp_ylow);
   } else {
     ddt(Nn) += Div_a_Grad_perp_flows(DnnNn, logPnlim, pf_adv_perp_xlow, pf_adv_perp_ylow);
   }
@@ -649,12 +670,11 @@ void NeutralMixed::finally(const Options& state) {
     ddt(Pn) +=
         (5. / 3)
         * Div_a_Grad_perp_nonorthog(DnnPn, logPnlim, ef_adv_perp_xlow, ef_adv_perp_ylow);
-  } else if (fluxsplit_perp_adv && flux_limit > 0.0) {
+  } else if (perp_upwind_blend) {
     ddt(Pn) += (5. / 3)
-               * Div_a_Grad_perp_fluxsplit_flows(
-                   DnnPn, Pnlim, Dnn_unlimited, avth, logPnlim, upwind_sign_smoothing,
-                   limiter_gradient_ceiling, limiter_gradient_floor, ef_adv_perp_xlow,
-                   ef_adv_perp_ylow);
+               * Div_ab_Grad_perp_upwind_blend_flows(Dnn, Pnlim, upwind_weight, logPnlim,
+                                                     upwind_sign_smoothing,
+                                                     ef_adv_perp_xlow, ef_adv_perp_ylow);
   } else {
     ddt(Pn) +=
         (5. / 3)
@@ -711,11 +731,10 @@ void NeutralMixed::finally(const Options& state) {
     if (nonorthogonal_operators) {
       ddt(NVn) +=
           Div_a_Grad_perp_nonorthog(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
-    } else if (fluxsplit_perp_adv && flux_limit > 0.0) {
-      ddt(NVn) += Div_a_Grad_perp_fluxsplit_flows(
-          DnnNVn, NVn, Dnn_unlimited, avth, logPnlim, upwind_sign_smoothing,
-          limiter_gradient_ceiling, limiter_gradient_floor, mf_adv_perp_xlow,
-          mf_adv_perp_ylow);
+    } else if (perp_upwind_blend) {
+      ddt(NVn) += Div_ab_Grad_perp_upwind_blend_flows(Dnn, NVn, upwind_weight, logPnlim,
+                                                      upwind_sign_smoothing,
+                                                      mf_adv_perp_xlow, mf_adv_perp_ylow);
     } else {
       ddt(NVn) +=
           Div_a_Grad_perp_flows(DnnNVn, logPnlim, mf_adv_perp_xlow, mf_adv_perp_ylow);
@@ -906,6 +925,15 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " maximum diffusion coefficient"},
                     {"source", "neutral_mixed"}});
+    if (perp_upwind_blend) {
+      set_with_attrs(state[fmt::format("upwind_weight{}", name)], upwind_weight,
+                     {{"time_dimension", "t"},
+                      {"units", ""},
+                      {"conversion", 1.0},
+                      {"standard_name", "upwind blend weight"},
+                      {"long_name", name + " perpendicular upwind blend weight Dnn/Dmax"},
+                      {"source", "neutral_mixed"}});
+    }
     set_with_attrs(state[std::string("SN") + name], Sn,
                    {{"time_dimension", "t"},
                     {"units", "m^-3 s^-1"},

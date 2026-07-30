@@ -893,46 +893,54 @@ const Field3D Div_a_Grad_perp_flows(const Field3D& a, const Field3D& f,
   return result;
 }
 
-/// Face-local convective/diffusive flux split (UEDGE electron-conduction form)
-/// for the saturation-limited neutral advective flux, applied to the X perp-flux.
+/// Div( a*b Grad_perp(f) ) with the X face scheme blended between central and
+/// donor-cell (upwind) in `b`.
 ///
-/// The cell-centre limiter builds D from a centred gradient, so the saturated
-/// flux (D -> Dmax, gradient-independent) is carried by the central scheme, which
-/// leaves the constant-coefficient checkerboard EXACTLY undamped. This operator
-/// rebuilds the X face flux locally as
+/// A central face scheme is blind to a grid-scale (odd-even) oscillation: the
+/// face average of an alternating field is flat, so the flux does not respond to
+/// the oscillation and cannot damp it. A donor-cell face value does respond, at
+/// the cost of first-order accuracy. This operator lets the caller choose, per
+/// face and smoothly, how much of each it wants, through the weight field `w`.
 ///
-///   F_{i+1/2} = D_unl^f * G * (N_face + R * N_donor) / (1 + R)^2 ,
+/// Per X face between cells i and i+1:
 ///
-/// with G the central metric face-gradient factor (as Div_a_Grad_perp_flows),
-/// R = D_unl^f * g_reg / (alpha * vth^f) the face saturation ratio from the
-/// REGULARISED physical face gradient
+///   ab_central = 0.5 * (a_i*b_i + a_ip*b_ip)     (as Div_a_Grad_perp_flows)
+///   a_face     = 0.5 * (a_i + a_ip)
+///   s          = df / sqrt(df^2 + eps^2),  df = f_ip - f_i
+///   b_upwind   = 0.5*(b_i + b_ip) + 0.5 * s * (b_ip - b_i)
+///   ab_face    = (1 - w_face) * ab_central + w_face * a_face * b_upwind
+///   F          = ab_face * G
 ///
-///   g_reg = sqrt( g_phys^2 C^2 / (g_phys^2 + C^2) + F^2 ) ,
-///   g_phys = sqrt(g11^f) |df| / dx^f ,
+/// with G the metric face-gradient factor of Div_a_Grad_perp_flows, applied in
+/// the same order as there. `s` is a smoothed sign of df: s=+1 selects b_ip,
+/// s=-1 selects b_i, and s->0 near an extremum returns the central average. eps
+/// sets the width of that changeover in units of df, keeping the scheme
+/// differentiable for an implicit solver.
 ///
-/// i.e. the same smooth ceiling C (grad_ceiling) and floor F (grad_floor) the
-/// cell-centre limiter applies to its gradient, so at N_face = N_donor the face
-/// flux is the EXACT face-local analogue of the gamma=1 harmonic blend. The
-/// ceiling caps R at steep fronts, keeping a diffusive channel open there (a
-/// raw-gradient R shuts the face off and starves floor-pinned holes — the 19c
-/// collapse, implementation_log 2026-07-09); C -> inf recovers the raw form.
-/// N_face is the central face average and N_donor the smoothly-upwinded
-/// donor-cell density. In the diffusive limit (R->0) F is identical to the
-/// central operator (order 2); in saturation it limits to the (ceiling-capped)
-/// free-streaming flux carried on the donor channel, damping the coefficient
-/// checkerboard. Domain-boundary faces use the SAME scheme as interior faces
-/// (donor may be the BC-filled guard cell): special-casing them is an O(1)
-/// local inconsistency (MMS, 2026-07-09).
+/// Note that only `b` is upwinded; `a` is always interpolated. For a diffusive
+/// flux the coefficient's face value must be a mean of the two sides (flux
+/// continuity across a jump in the coefficient); upwinding it would be a poor
+/// interpolation rather than a transport scheme. `b` is the transported
+/// quantity, for which donor-cell is the standard first-order choice.
 ///
-/// The Y (g23 cross) and Z fluxes reuse the limited coefficient a = D*Nch,
-/// central and verbatim from Div_a_Grad_perp_flows; both are inert in the 2D
-/// orthogonal neutral cases this targets (a 3D Z-split is a future generalisation).
-const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& Nch,
-                                              const Field3D& Dunl, const Field3D& avth,
-                                              const Field3D& f, BoutReal eps,
-                                              BoutReal grad_ceiling, BoutReal grad_floor,
-                                              Field3D& flow_xlow, Field3D& flow_ylow) {
+/// Limits: w=0 is bit-identical to Div_a_Grad_perp_flows(a*b, f) and is second
+/// order; w=1 is donor-cell in b and first order. Any smooth w in between is a
+/// consistent scheme. w is not clamped here - callers must supply w in [0, 1].
+///
+/// Domain-boundary faces use the SAME scheme as interior faces; the upwind value
+/// there may be a boundary-condition-filled guard cell. Special-casing the
+/// boundary face is an O(1) local inconsistency that degrades global convergence
+/// and plants a permanent flux defect at the first and last cell.
+///
+/// The Y (g23 cross) and Z fluxes are central and verbatim from
+/// Div_a_Grad_perp_flows, using the product a*b as their coefficient.
+const Field3D Div_ab_Grad_perp_upwind_blend_flows(const Field3D& a, const Field3D& b,
+                                                  const Field3D& w, const Field3D& f,
+                                                  BoutReal eps, Field3D& flow_xlow,
+                                                  Field3D& flow_ylow) {
   ASSERT2(a.getLocation() == f.getLocation());
+  ASSERT2(b.getLocation() == f.getLocation());
+  ASSERT2(w.getLocation() == f.getLocation());
 
   Mesh* mesh = a.getMesh();
 
@@ -944,53 +952,47 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
   flow_xlow = 0.0;
   flow_ylow = 0.0;
 
-  // Flux in x: face-local convective/diffusive split
+  // Coefficient of the Y and Z fluxes, and of the central branch in X
+  const Field3D ab = a * b;
+
+  // Flux in x: central/upwind blend in b
 
   int xs = mesh->xstart - 1;
   int xe = mesh->xend;
 
-  // Regularisation constants for the face gradient (see doc comment above)
-  const BoutReal C2 = SQ(grad_ceiling);
-  const BoutReal F2 = SQ(grad_floor);
-
   for (int i = xs; i <= xe; i++) {
-    // NB domain-boundary faces are NOT special-cased: dropping the donor there
-    // (the original "constraint 4") is an O(1) scheme inconsistency at the
-    // first/last interior cells that degrades global convergence to O(sqrt(dx))
-    // (MMS, implementation_log 2026-07-09). The guard value is BC-filled and is
-    // a legitimate donor; the eps smoothing handles sign flaps as elsewhere.
+    // NB domain-boundary faces are NOT special-cased: switching scheme there is
+    // an O(1) inconsistency at the first/last interior cells that degrades
+    // global convergence to O(sqrt(dx)). The guard value is boundary-filled and
+    // is a legitimate upwind value; eps handles sign flaps as elsewhere.
     for (int j = mesh->ystart; j <= mesh->yend; j++) {
       for (int k = 0; k < mesh->LocalNz; k++) {
         // Calculate flux from i to i+1
         const BoutReal df = f(i + 1, j, k) - f(i, j, k);
-        const BoutReal sumdx = coord->dx(i, j, k) + coord->dx(i + 1, j, k);
 
-        // Central metric face-gradient factor (identical to Div_a_Grad_perp_flows)
-        const BoutReal G = (coord->J(i, j, k) * coord->g11(i, j, k)
-                            + coord->J(i + 1, j, k) * coord->g11(i + 1, j, k))
-                           * df / sumdx;
+        // Central branch: face average of the product, exactly as
+        // Div_a_Grad_perp_flows. Keeping the product average here (rather than
+        // the product of averages) is what makes w=0 identical to it.
+        const BoutReal ab_central = 0.5 * (ab(i, j, k) + ab(i + 1, j, k));
 
-        // Physical face gradient, regularised with the same smooth ceiling and
-        // floor as the cell-centre limiter's gradient (keeps a diffusive
-        // channel open at steep fronts; see doc comment)
-        const BoutReal g11f = 0.5 * (coord->g11(i, j, k) + coord->g11(i + 1, j, k));
-        const BoutReal dxf = 0.5 * sumdx;
-        const BoutReal gphys2 = g11f * SQ(df) / SQ(dxf);
-        const BoutReal greg = sqrt(gphys2 * C2 / (gphys2 + C2) + F2);
-
-        // avth = alpha * vth = the free-streaming scale (Dmax numerator in
-        // neutral_mixed), so R here is calibrated to the same cap as the
-        // cell-centre limiter, but built from the LOCAL FACE gradient.
-        const BoutReal Dunlf = 0.5 * (Dunl(i, j, k) + Dunl(i + 1, j, k));
-        const BoutReal avthf = 0.5 * (avth(i, j, k) + avth(i + 1, j, k));
-        const BoutReal R = Dunlf * greg / (avthf + 1e-30);
-
-        // Central face density, and the smoothly-upwinded donor density
-        const BoutReal Nface = 0.5 * (Nch(i, j, k) + Nch(i + 1, j, k));
+        // Upwind branch: a interpolated, b taken from the upwind side. s is a
+        // smoothed sign of df; s->0 at an extremum returns the face average.
+        const BoutReal a_face = 0.5 * (a(i, j, k) + a(i + 1, j, k));
+        const BoutReal b_face = 0.5 * (b(i, j, k) + b(i + 1, j, k));
         const BoutReal s = (df == 0.0) ? 0.0 : df / sqrt(SQ(df) + SQ(eps));
-        const BoutReal Ndonor = Nface + 0.5 * s * (Nch(i + 1, j, k) - Nch(i, j, k));
+        const BoutReal b_upwind = b_face + 0.5 * s * (b(i + 1, j, k) - b(i, j, k));
 
-        const BoutReal fout = Dunlf * G * (Nface + R * Ndonor) / SQ(1.0 + R);
+        const BoutReal w_face = 0.5 * (w(i, j, k) + w(i + 1, j, k));
+
+        // At w_face = 0 this is exactly ab_central (1*x + 0*y is exact), and the
+        // metric factors below are applied in the same order as
+        // Div_a_Grad_perp_flows, so w=0 reproduces that operator bit for bit.
+        const BoutReal ab_face = (1.0 - w_face) * ab_central + w_face * a_face * b_upwind;
+
+        const BoutReal fout = ab_face
+                              * (coord->J(i, j, k) * coord->g11(i, j, k)
+                                 + coord->J(i + 1, j, k) * coord->g11(i + 1, j, k))
+                              * df / (coord->dx(i, j, k) + coord->dx(i + 1, j, k));
 
         result(i, j, k) += fout / (coord->dx(i, j, k) * coord->J(i, j, k));
         result(i + 1, j, k) -= fout / (coord->dx(i + 1, j, k) * coord->J(i + 1, j, k));
@@ -1017,7 +1019,7 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
   // Values on this y slice (centre).
   // This is needed because toFieldAligned may modify the field
   Field3D fc = f;
-  Field3D ac = a;
+  Field3D ac = ab;
 
   Field3D g23c = coord->g23;
   Field3D g_23c = coord->g_23;
@@ -1030,20 +1032,20 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
   Field3D yzresult(mesh);
   yzresult.allocate();
 
-  if (f.hasParallelSlices() && a.hasParallelSlices()) {
+  if (f.hasParallelSlices() && ab.hasParallelSlices()) {
     // Both inputs have yup and ydown
 
     fup = f.yup();
     fdown = f.ydown();
 
-    aup = a.yup();
-    adown = a.ydown();
+    aup = ab.yup();
+    adown = ab.ydown();
   } else {
     // At least one input doesn't have yup/ydown fields.
     // Need to shift to/from field aligned coordinates
 
     fup = fdown = fc = toFieldAligned(f);
-    aup = adown = ac = toFieldAligned(a);
+    aup = adown = ac = toFieldAligned(ab);
 
     yzresult.setDirectionY(YDirectionType::Aligned);
     flow_ylow.setDirectionY(YDirectionType::Aligned);
@@ -1171,8 +1173,11 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
       }
     }
   }
-  // Check if we need to transform back
-  if (f.hasParallelSlices() && a.hasParallelSlices()) {
+  // Check if we need to transform back. This condition MUST match the one that
+  // chose the branch above: `ab` is a product and so generally carries no
+  // parallel slices even when `a` does, and testing the two different fields
+  // transforms one way but not back.
+  if (f.hasParallelSlices() && ab.hasParallelSlices()) {
     result += yzresult;
   } else {
     result += fromFieldAligned(yzresult);
@@ -1181,7 +1186,6 @@ const Field3D Div_a_Grad_perp_fluxsplit_flows(const Field3D& a, const Field3D& N
 
   return result;
 }
-
 
 // Div ( a Grad_perp(f) )  -- diffusion
 /// WARNING: Causes checkerboarding in neutral_mixed integrated test
