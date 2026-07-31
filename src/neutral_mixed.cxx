@@ -1344,7 +1344,7 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "diffusion coefficient"},
                     {"long_name", name + " unlimited diffusion coefficient"},
                     {"source", "neutral_mixed"}});
-    set_with_attrs(state[fmt::format("Dnn_max_{}", name)], Dmax,
+    set_with_attrs(state[fmt::format("Dnn{}_max", name)], Dmax,
                    {{"time_dimension", "t"},
                     {"units", "m^2/s"},
                     {"conversion", Cs0 * Cs0 / Omega_ci},
@@ -1383,14 +1383,14 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "conductivity"},
                     {"long_name", name + " unlimited conductivity"},
                     {"source", "neutral_mixed"}});
-    set_with_attrs(state[fmt::format("kappa_max_{}_perp", name)], kappa_n_max_perp,
+    set_with_attrs(state[fmt::format("kappa_{}_max_perp", name)], kappa_n_max_perp,
                    {{"time_dimension", "t"},
                     {"units", "W / m / eV"},
                     {"conversion", (Pnorm * Omega_ci * SQ(rho_s0)) / Tnorm},
                     {"standard_name", "conductivity"},
                     {"long_name", name + " maximum perpendicular conductivity"},
                     {"source", "neutral_mixed"}});
-    set_with_attrs(state[fmt::format("kappa_max_{}_par", name)], kappa_n_max_par,
+    set_with_attrs(state[fmt::format("kappa_{}_max_par", name)], kappa_n_max_par,
                    {{"time_dimension", "t"},
                     {"units", "W / m / eV"},
                     {"conversion", (Pnorm * Omega_ci * SQ(rho_s0)) / Tnorm},
@@ -1432,14 +1432,14 @@ void NeutralMixed::outputVars(Options& state) {
                     {"standard_name", "viscosity"},
                     {"long_name", name + " parallel viscosity"},
                     {"source", "neutral_mixed"}});
-    set_with_attrs(state[fmt::format("eta_max_{}_perp", name)], eta_n_max_perp,
+    set_with_attrs(state[fmt::format("eta_{}_max_perp", name)], eta_n_max_perp,
                    {{"time_dimension", "t"},
                     {"units", "Pa s"},
                     {"conversion", Pnorm / Omega_ci},
                     {"standard_name", "viscosity"},
                     {"long_name", name + " maximum perpendicular viscosity"},
                     {"source", "neutral_mixed"}});
-    set_with_attrs(state[fmt::format("eta_max_{}_par", name)], eta_n_max_par,
+    set_with_attrs(state[fmt::format("eta_{}_max_par", name)], eta_n_max_par,
                    {{"time_dimension", "t"},
                     {"units", "Pa s"},
                     {"conversion", Pnorm / Omega_ci},
