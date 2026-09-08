@@ -43,8 +43,11 @@ src_list = [
     "St_low-n_recombination",
     "St+_low-n_ionization",
     "St+_low-n_external_src",
+    "She_low-n_recombination",
+    "She+_low-n_ionization",
+    "She+_low-n_external_src",
 ]
-src_group_indices = [[0, 1, 2], [3, 4, 5]]
+src_group_indices = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
 src_var_groups = [[f"{src_list[i]}" for i in group] for group in src_group_indices]
 anim_vars = [[f"N{species_list[i]}" for i in group] for group in dens_group_indices]
 anim_subplot_titles = list(dens_subplot_titles)
