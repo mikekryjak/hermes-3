@@ -52,7 +52,8 @@ J = 1
 components = (d+, d, e,
               sheath_boundary_simple, braginskii_collisions, braginskii_friction,
               braginskii_heat_exchange, reactions, electron_force_balance,
-              neutral_parallel_diffusion, braginskii_conduction, recycling)
+              neutral_parallel_diffusion, braginskii_conduction, recycling,
+              low_n_sources)
 
 normalise_metric = true  # Normalise the input metric?
 
@@ -95,6 +96,12 @@ upper_y = true
 gamma_e = 3.5
 gamma_i = 3.5
 
+
+[low_n_sources]
+low_n_floor_fac = 10
+# Arbitrarily increase the source timescale
+low_n_timescale = 10000000
+diagnose = true
 
 [neutral_parallel_diffusion]
 # Diffusive enhancement due to recycled neutrals flowing normal to target wall
