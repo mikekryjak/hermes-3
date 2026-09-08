@@ -12,8 +12,8 @@
 #  - D, T and He neutrals and ions
 
 
-nout = 3
-timestep = 2500
+nout = 30
+timestep = 250
 
 MXG = 0  # No guard cells in X
 
