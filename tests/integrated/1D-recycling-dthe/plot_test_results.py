@@ -4,7 +4,6 @@ import os.path
 import pathlib
 import sys
 
-import matplotlib.pyplot as plt
 import xhermes
 from matplotlib.animation import PillowWriter
 
@@ -25,12 +24,16 @@ options = ds.options
 low_n_sources_enabled = "low_n_sources" in options
 
 # Species densities
-species_list = ["d", "d+", "t", "t+"]
-dens_group_indices = [[0, 1], [2, 3]]
+species_list = ["d", "d+", "t", "t+", "he", "he+"]
+dens_group_indices = [[0, 1], [2, 3], [4, 5]]
 dens_var_groups = [
     [f"N{species_list[i]}" for i in group] for group in dens_group_indices
 ]
-dens_subplot_titles = ["Deuterium atoms,ions", "Tritium atoms,ions"]
+dens_subplot_titles = [
+    "Deuterium atoms,ions",
+    "Tritium atoms,ions",
+    "Helium atoms,ions",
+]
 
 # Source diagnostics
 src_list = [
@@ -48,10 +51,16 @@ anim_subplot_titles = list(dens_subplot_titles)
 if low_n_sources_enabled:
     src_var_groups = [[f"{src_list[i]}" for i in group] for group in src_group_indices]
     anim_vars.extend(src_var_groups)
-    anim_subplot_titles.extend(["Deuterium sources", "Tritium sources"])
-    anim_logscales = [True, True, False, False]
+    anim_subplot_titles.extend(
+        ["Deuterium sources", "Tritium sources", "Helium sources"]
+    )
+    anim_logscales = [True, True, True, False, False, False]
 else:
-    anim_logscales = [True, True]  # Only densities for Deuterium and Tritium
+    anim_logscales = [
+        True,
+        True,
+        True,
+    ]  # Only densities for Deuterium, Tritium, and Helium
 
 # Extract density thresholds
 floors = {}
@@ -67,37 +76,37 @@ for species in species_list:
         thresholds[species] = floor * options["low_n_sources"]["low_n_floor_fac"]
 
 
-print("Generating ICs plot")
-ICs_output_path = os.path.realpath("low-n_sources_initial")
-ds_first = ds.isel(t=0)
+# print("Generating ICs plot")
+# ICs_output_path = os.path.realpath("low-n_sources_initial")
+# ds_first = ds.isel(t=0)
 
-fig, ax = plt.subplots(len(dens_var_groups), 1, sharex=True)
-for title, group, species_group in zip(
-    dens_subplot_titles, dens_var_groups, dens_group_indices
-):
-    for var in group:
-        # animate_list() mutates density_vars in place, replacing names with DataArrays
-        var_name = var if isinstance(var, str) else var.name
-        ds_first[var_name].plot(ax=ax, label=var_name)
-    ax.set_yscale("log")
-    ax.set_ylim(bottom=min(floors[species_list[i]] / 2 for i in species_group))
-    if low_n_sources_enabled:
-        for i in species_group:
-            species = species_list[i]
-            color = ax.get_lines()[species_group.index(i)].get_color()
-            linestyle = ":" if species.endswith("+") else "--"
-            ax.axhline(
-                thresholds[species],
-                color=color,
-                linestyle=linestyle,
-                label=f"N{species}_th",
-            )
-    ax.set_ylabel("number density [normalised]")
-    ax.set_title(title)
-    ax.legend()
-fig.tight_layout()
-fig.savefig(ICs_output_path + ".png")
-print(f"Wrote output to {ICs_output_path}.png")
+# fig, ax = plt.subplots(len(dens_var_groups), 1, sharex=True)
+# for title, group, species_group in zip(
+#     dens_subplot_titles, dens_var_groups, dens_group_indices
+# ):
+#     for var in group:
+#         # animate_list() mutates density_vars in place, replacing names with DataArrays
+#         var_name = var if isinstance(var, str) else var.name
+#         ds_first[var_name].plot(ax=ax, label=var_name)
+#     ax.set_yscale("log")
+#     ax.set_ylim(bottom=min(floors[species_list[i]] / 2 for i in species_group))
+#     if low_n_sources_enabled:
+#         for i in species_group:
+#             species = species_list[i]
+#             color = ax.get_lines()[species_group.index(i)].get_color()
+#             linestyle = ":" if species.endswith("+") else "--"
+#             ax.axhline(
+#                 thresholds[species],
+#                 color=color,
+#                 linestyle=linestyle,
+#                 label=f"N{species}_th",
+#             )
+#     ax.set_ylabel("number density [normalised]")
+#     ax.set_title(title)
+#     ax.legend()
+# fig.tight_layout()
+# fig.savefig(ICs_output_path + ".png")
+# print(f"Wrote output to {ICs_output_path}.png")
 
 print("Generating animation")
 anim_output_path = os.path.realpath("low-n_sources_animation")
