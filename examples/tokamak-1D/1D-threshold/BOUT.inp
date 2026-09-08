@@ -114,7 +114,7 @@ dneut = 10   # measure of field line incidence angle: (B / Bpol)^2
 type = (evolve_density, evolve_pressure, evolve_momentum,
         noflow_boundary, upstream_density_feedback)
 
-density_floor = 1e-7
+density_floor = 1e-8
 
 noflow_lower_y = true   # Reflective boundary at midplane
 noflow_upper_y = false  # This is already covered by sheath boundary
@@ -172,7 +172,7 @@ AA = 2
 
 thermal_conduction = true
 diagnose = true
-density_floor = 1e-7
+density_floor = 1e-8
 
 [Nd]
 function = 0.001
