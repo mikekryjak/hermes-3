@@ -63,7 +63,7 @@ rtol = 1e-7
 [low_n_sources]
 low_n_floor_fac = 10
 # Arbitrarily increase the source timescale
-low_n_timescale = 10000000
+low_n_timescale = 100000
 diagnose = true
 
 ################################################################################
