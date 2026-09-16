@@ -12,8 +12,8 @@
 #  - D, T and He neutrals and ions
 
 
-nout = 3
-timestep = 2500
+nout = 30
+timestep = 250
 
 MXG = 0  # No guard cells in X
 
@@ -46,7 +46,7 @@ ixseps2 = -1
 components = (d+, d, t+, t, he+, he, e,
               sheath_boundary, braginskii_collisions, braginskii_friction, braginskii_heat_exchange,
               recycling, reactions, braginskii_thermal_force, electron_force_balance,
-              neutral_parallel_diffusion, braginskii_ion_viscosity, braginskii_conduction)
+              neutral_parallel_diffusion, braginskii_ion_viscosity, braginskii_conduction, low_n_sources)
 
 Nnorm = 1e19
 Bnorm = 1
@@ -57,6 +57,14 @@ Tnorm = 100
 mxstep = 50000
 atol = 1e-12
 rtol = 1e-7
+
+
+################################################################################
+[low_n_sources]
+low_n_floor_fac = 10
+# Arbitrarily increase the source timescale
+low_n_timescale = 100000
+diagnose = true
 
 ################################################################################
 [d+]  # Deuterium ions

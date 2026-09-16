@@ -30,7 +30,7 @@ length_xpt = 10   # Length from midplane to X-point [m] (i.e. this is where the 
 
 dymin = 0.1  # Minimum grid spacing near target, as fraction of average. Must be > 0 and < 1
 
-# Parallel grid spacing — grid refinement near the divertor target 
+# Parallel grid spacing — grid refinement near the divertor target
 dy = (length / ny) * (1 + (1-dymin)*(1-y/pi))
 
 # Calculate where the source ends in grid index (i.e. at the X-point)
@@ -43,7 +43,7 @@ ixseps2 = -1
 
 # In 1D, the Jacobian is inversely proportional to volume
 # Total flux expansion can be set up with a non-constant J profile
-J = 1  
+J = 1
 
 [hermes]
 # Evolve ion density, ion and electron pressure, then calculate force on ions due
@@ -52,7 +52,8 @@ J = 1
 components = (d+, d, e,
               sheath_boundary_simple, braginskii_collisions, braginskii_friction,
               braginskii_heat_exchange, reactions, electron_force_balance,
-              neutral_parallel_diffusion, braginskii_conduction, recycling)
+              neutral_parallel_diffusion, braginskii_conduction, recycling,
+              low_n_sources)
 
 normalise_metric = true  # Normalise the input metric?
 
@@ -96,6 +97,12 @@ gamma_e = 3.5
 gamma_i = 3.5
 
 
+[low_n_sources]
+low_n_floor_fac = 10
+# Arbitrarily increase the source timescale
+low_n_timescale = 10000000
+diagnose = true
+
 [neutral_parallel_diffusion]
 # Diffusive enhancement due to recycled neutrals flowing normal to target wall
 dneut = 10   # measure of field line incidence angle: (B / Bpol)^2
@@ -106,6 +113,8 @@ dneut = 10   # measure of field line incidence angle: (B / Bpol)^2
 [d+]  # Deuterium ions
 type = (evolve_density, evolve_pressure, evolve_momentum,
         noflow_boundary, upstream_density_feedback)
+
+density_floor = 1e-8
 
 noflow_lower_y = true   # Reflective boundary at midplane
 noflow_upper_y = false  # This is already covered by sheath boundary
@@ -124,7 +133,7 @@ thermal_conduction = true  # Enable conduction in evolve_pressure
 diagnose = true
 
 recycle_as = d
-target_recycle = true  
+target_recycle = true
 target_recycle_energy = 3.5    # Franck-Condon dissociation energy
 target_recycle_multiplier = 1  # Recycling fraction
 
@@ -163,7 +172,7 @@ AA = 2
 
 thermal_conduction = true
 diagnose = true
-density_floor = 1e-5
+density_floor = 1e-8
 
 [Nd]
 function = 0.001
