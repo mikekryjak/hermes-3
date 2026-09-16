@@ -1,11 +1,11 @@
 #!/bin/bash
 
-lbl='NPD_all'
-build='kotov'
+lbl='low_n_srcs'
+build='kotovLowNSrcs'
 NMPI=5
 
 build_dir="$H3/builds/$build"
-data_dir="$H3/builds/$build/tests/integrated/1D-kotov/data"
+data_dir="$build_dir/tests/integrated/1D-kotov/data"
 exec="$build_dir/hermes-3"
 
 mkdir -p "$ARCHH3/kotov_testing"
@@ -27,4 +27,4 @@ echo "    NMPI : $NMPI"
 echo " run_dir : $run_dir"
 
 cd "$run_dir"
-mpirun -n $NMPI $exec
+mpirun -n $NMPI $exec -d .
