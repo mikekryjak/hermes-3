@@ -2,7 +2,7 @@
 
 lbl='low_n_srcs'
 build='kotovLowNSrcs'
-NMPI=5
+NMPI=1
 
 build_dir="$H3/builds/$build"
 data_dir="$build_dir/tests/integrated/1D-kotov/data"
