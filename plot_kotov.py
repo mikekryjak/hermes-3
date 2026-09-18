@@ -130,8 +130,9 @@ def animation(ds, flds, outpath=None, **kws):
 
 
 if __name__ == "__main__":
-    lbl = "low_n_srcs"
+    lbl = "low_n_srcs_debug"
     data_dir = f"/home/oparry/code/arch-H3/kotov_testing/{lbl}"
+    print(f"Plotting data from {data_dir}")
     output_dir = this_dir / lbl
     os.makedirs(output_dir, exist_ok=True)
     try:
