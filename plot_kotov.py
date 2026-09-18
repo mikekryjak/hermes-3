@@ -165,9 +165,9 @@ if __name__ == "__main__":
     animation(
         ds,
         [
-            ["Ne", "Nd", "Nd+", "Nd2"],
-            ["Te", "Td", "Td+", "Td2"],
-            ["Pe", "Pd", "Pd+", "Pd2"],
+            ["Ne", "Nd", "Nd+", "Nd2", "Nd2+"],
+            ["Te", "Td", "Td+", "Td2", "Td2+"],
+            ["Pe", "Pd", "Pd+", "Pd2", "Pd2+"],
         ],
         titles=["Densities", "Temperatures", "Pressures"],
         outpath=anim_outpath,
