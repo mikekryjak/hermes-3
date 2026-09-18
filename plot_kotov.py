@@ -153,7 +153,7 @@ if __name__ == "__main__":
     output_dir = this_dir / lbl
     os.makedirs(output_dir, exist_ok=True)
     try:
-        ds = xhermes.open(data_dir, unnormalise=True)
+        ds = xhermes.open(data_dir, unnormalise=False)
     except OSError:
         raise OSError(f"Error when trying to read data from {data_dir}.")
 
