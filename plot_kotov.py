@@ -3,6 +3,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import xhermes
+from matplotlib.animation import PillowWriter
 
 this_dir = Path(__file__).parent
 
@@ -118,7 +119,14 @@ def animation(ds, flds, outpath=None, **kws):
         outpath = this_dir / "kotov_animation"
     figsize = kws.pop("figsize", (18, 8))
     with plt.rc_context({"figure.figsize": figsize}):
-        ds.bout.animate_list(flds, show=False, save_as=str(outpath), **kws)
+        animation = ds.bout.animate_list(flds, show=False, save_as=None, **kws)
+
+        plot_axes = {block.ax for block in animation.blocks}
+        for axis in list(animation.blocks[0].ax.figure.axes):
+            if axis not in plot_axes:
+                axis.remove()
+
+        animation.save(str(outpath) + ".gif", writer=PillowWriter(fps=8))
 
 
 if __name__ == "__main__":
