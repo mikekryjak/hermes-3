@@ -45,11 +45,13 @@ class DashBoard:
         for ax, (panel_name, plots) in zip(axes_flat, self.panels.items()):
             for var_name, label, kws in plots:
                 self.ds[var_name].plot(ax=ax, label=label, **kws)
-            plot_legend = self.panel_kws[panel_name].pop("plot_legend", True)
+            panel_kws = self.panel_kws[panel_name].copy()
+            plot_legend = panel_kws.pop("plot_legend", True)
             if plot_legend:
                 ax.legend()
-            panel_title = self.panel_kws[panel_name].get("title", "")
-            ax.set(title=panel_title, **self.panel_kws[panel_name])
+            panel_title = panel_kws.pop("title", panel_name)
+            ax.set(**panel_kws)
+            ax.set_title(panel_title)
 
         plt.tight_layout()
         return fig
@@ -118,6 +120,19 @@ def animation(ds, flds, outpath=None, **kws):
     if outpath is None:
         outpath = this_dir / "kotov_animation"
     figsize = kws.pop("figsize", (18, 8))
+    mask_nonpositive = kws.pop("mask_nonpositive", False)
+    if mask_nonpositive:
+        ds = ds.copy()
+        field_names = [
+            field_name
+            for field_group in flds
+            for field_name in (
+                field_group if isinstance(field_group, list) else [field_group]
+            )
+        ]
+        for field_name in field_names:
+            ds[field_name] = ds[field_name].where(ds[field_name] > 0)
+
     with plt.rc_context({"figure.figsize": figsize}):
         animation = ds.bout.animate_list(flds, show=False, save_as=None, **kws)
 
@@ -125,7 +140,10 @@ def animation(ds, flds, outpath=None, **kws):
         for axis in list(animation.blocks[0].ax.figure.axes):
             if axis not in plot_axes:
                 axis.remove()
+        for axis in plot_axes:
+            axis.legend(loc="lower left")
 
+        animation.blocks[0].ax.figure.subplots_adjust(hspace=0.5)
         animation.save(str(outpath) + ".gif", writer=PillowWriter(fps=8))
 
 
@@ -151,8 +169,10 @@ if __name__ == "__main__":
             ["Te", "Td", "Td+", "Td2"],
             ["Pe", "Pd", "Pd+", "Pd2"],
         ],
+        titles=["Densities", "Temperatures", "Pressures"],
         outpath=anim_outpath,
-        logscale=False,
+        logscale=True,
+        mask_nonpositive=True,
         fps=8,
         tight_layout=False,
         controls=None,
