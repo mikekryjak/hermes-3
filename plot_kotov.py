@@ -1,7 +1,8 @@
-import xhermes
-from pathlib import Path
-import matplotlib.pyplot as plt
 import os
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import xhermes
 
 this_dir = Path(__file__).parent
 
@@ -126,17 +127,16 @@ if __name__ == "__main__":
     output_dir = this_dir / lbl
     os.makedirs(output_dir, exist_ok=True)
     try:
-        ds_orig = xhermes.open(data_dir, unnormalise=True)
-    except IOError:
-        raise IOError(f"Error when trying to read data from {data_dir}.")
-    ds = ds_orig.hermes.extract_1d_tokamak_geometry()
+        ds = xhermes.open(data_dir, unnormalise=True)
+    except OSError:
+        raise OSError(f"Error when trying to read data from {data_dir}.")
 
     last_output_dashboard(ds.isel(t=-1), output_dir / "kotov_last_output.png")
     # all_outputs_dashboard(ds.isel(pos=slice(2, -2)), output_dir / "kotov_evo.png")
 
     anim_outpath = output_dir / "kotov_animation"
     animation(
-        ds_orig,
+        ds,
         [
             ["Ne", "Nd", "Nd+", "Nd2"],
             ["Te", "Td", "Td+", "Td2"],
