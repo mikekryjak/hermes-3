@@ -143,7 +143,7 @@ if __name__ == "__main__":
             ["Pe", "Pd", "Pd+", "Pd2"],
         ],
         outpath=anim_outpath,
-        logscale=True,
+        logscale=False,
         fps=8,
         tight_layout=False,
         controls=None,
