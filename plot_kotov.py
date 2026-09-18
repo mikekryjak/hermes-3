@@ -142,6 +142,16 @@ def animation(ds, flds, outpath=None, **kws):
                 axis.remove()
         for axis in plot_axes:
             axis.legend(loc="lower left")
+        plot_axes_in_order = list(dict.fromkeys(block.ax for block in animation.blocks))
+        for axis, ylabel in zip(
+            plot_axes_in_order,
+            [
+                "number density [normalised]",
+                "Temperature [normalised] ",
+                "Pressure [normalised] ",
+            ],
+        ):
+            axis.set_ylabel(ylabel)
 
         animation.blocks[0].ax.figure.subplots_adjust(hspace=0.5)
         animation.save(str(outpath) + ".gif", writer=PillowWriter(fps=8))
