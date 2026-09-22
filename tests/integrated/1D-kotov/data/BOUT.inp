@@ -93,7 +93,7 @@ matrix_free_operator = true
 [low_n_sources]
 low_n_floor_fac = 10
 # Arbitrarily increase the source timescale
-low_n_timescale = 10000
+low_n_timescale = 3000
 diagnose = true
 
 ######################################### Deuterium ions ##########################################

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 lbl='low_n_srcs'
-run_dir_suffix='_nod2p_long_lowndt1e4'
+run_dir_suffix='_nod2p_long_lowndt3e3'
 build='kotovLowNSrcs'
 NMPI=1
 
