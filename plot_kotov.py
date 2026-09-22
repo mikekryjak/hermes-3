@@ -8,7 +8,7 @@ from matplotlib.animation import PillowWriter
 this_dir = Path(__file__).parent
 
 include_d2_plus = False
-suffix = "_nod2p_long_lowndt1e5"
+suffix = "_nod2p_long_lowndt1e4"
 debug = False
 
 
