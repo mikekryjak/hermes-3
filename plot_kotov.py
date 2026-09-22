@@ -158,7 +158,7 @@ def animation(ds, flds, outpath=None, **kws):
 
 
 if __name__ == "__main__":
-    suffix = "_orig_long_lowndt1e4"
+    suffix = "_orig_long_lowndt1e5"
     debug = False
     lbl = f"low_n_srcs{suffix}"
     if debug:
