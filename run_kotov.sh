@@ -1,6 +1,7 @@
 #!/bin/bash
 
 lbl='low_n_srcs'
+run_dir_suffix=''
 build='kotovLowNSrcs'
 NMPI=1
 
@@ -9,7 +10,7 @@ data_dir="$build_dir/tests/integrated/1D-kotov/data"
 exec="$build_dir/hermes-3"
 
 mkdir -p "$ARCHH3/kotov_testing"
-run_dir="$ARCHH3/kotov_testing/$lbl"
+run_dir="$ARCHH3/kotov_testing/${lbl}$run_dir_suffix"
 
 if [ -d "$run_dir" ]; then
     echo "Run directory $run_dir already exists, overwrite it? (y/n)"
