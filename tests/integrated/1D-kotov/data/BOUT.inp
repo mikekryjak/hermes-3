@@ -56,7 +56,7 @@ J = 1
 components = (d+, d, d2, e,
               sheath_boundary_simple, braginskii_collisions, braginskii_friction,
               braginskii_heat_exchange, reactions, electron_force_balance,
-              neutral_parallel_diffusion, braginskii_conduction, recycling, low_n_sources)
+              braginskii_conduction, recycling, low_n_sources)
 
 normalise_metric = true
 
@@ -221,11 +221,6 @@ function = `Pd+:function`
 source = `Pd+:source`
 
 ########################################## Other physics ##########################################
-[neutral_parallel_diffusion]
-# Diffusive enhancement due to recycled neutrals flowing normal to target wall
-dneut = 10   # measure of field line incidence angle: (B / Bpol)^2
-
-# -----------------------------------------------
 [reactions]
 diagnose = true
 type = (
