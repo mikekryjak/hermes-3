@@ -194,11 +194,11 @@ density_floor = 1e-6
 # -----------------------------------------------
 [Nd2]
 # 0.1 * atomic neutral density
-function = 0.001
+function = 0.0001
 
 # -----------------------------------------------
 [Pd2]
-function = 0.0001
+function = 0.00001
 # 0.1 * atomic neutral pressure
 
 ##################################### Deuterium molecular ions ####################################
@@ -234,12 +234,12 @@ thermal_conduction = true
 # -----------------------------------------------
 [Nd2+]
 # Constant initial density for molecular ions
-function = 0.001
+function = 0.00001
 #source_shape = H(mesh:y_xpt - y) * 1e20 # Feedback controller source shape
 
 [Pd2+]
 ## Initial condition for ion pressure (in terms of hermes:Nnorm * hermes:Tnorm)
-function = 0.0001
+function = 0.00001
 ## Unmitigated heat flux at the X-point in W/m2
 #powerflux = 2.5e7
 
