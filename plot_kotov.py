@@ -7,6 +7,10 @@ from matplotlib.animation import PillowWriter
 
 this_dir = Path(__file__).parent
 
+include_d2_plus = False
+suffix = "_nod2p_long_lowndt1e5"
+debug = False
+
 
 class DashBoard:
     def __init__(self, ds, ncols=1):
@@ -158,8 +162,6 @@ def animation(ds, flds, outpath=None, **kws):
 
 
 if __name__ == "__main__":
-    suffix = "_orig_long_lowndt1e5"
-    debug = False
     lbl = f"low_n_srcs{suffix}"
     if debug:
         lbl += "_debug"
@@ -175,13 +177,21 @@ if __name__ == "__main__":
     last_output_dashboard(ds.isel(t=-1), output_dir / "kotov_last_output.png")
     # all_outputs_dashboard(ds.isel(pos=slice(2, -2)), output_dir / "kotov_evo.png")
 
+    species_list = ["e", "d", "d+", "d2"]
+    if include_d2_plus:
+        species_list.append("d2+")
+
+    density_fields = [f"N{spec}" for spec in species_list]
+    temperature_fields = [f"T{spec}" for spec in species_list]
+    pressure_fields = [f"P{spec}" for spec in species_list]
+
     anim_outpath = output_dir / "kotov_animation"
     animation(
         ds,
         [
-            ["Ne", "Nd", "Nd+", "Nd2", "Nd2+"],
-            ["Te", "Td", "Td+", "Td2", "Td2+"],
-            ["Pe", "Pd", "Pd+", "Pd2", "Pd2+"],
+            density_fields,
+            temperature_fields,
+            pressure_fields,
         ],
         titles=["Densities", "Temperatures", "Pressures"],
         outpath=anim_outpath,
