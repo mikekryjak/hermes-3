@@ -158,10 +158,14 @@ def animation(ds, flds, outpath=None, **kws):
 
 
 if __name__ == "__main__":
-    lbl = "low_n_srcs_debug"
+    suffix = "_orig_long"
+    debug = False
+    lbl = f"low_n_srcs{suffix}"
+    if debug:
+        lbl += "_debug"
     data_dir = f"/home/oparry/code/arch-H3/kotov_testing/{lbl}"
     print(f"Plotting data from {data_dir}")
-    output_dir = this_dir / lbl
+    output_dir = this_dir / "kotov_testing" / lbl
     os.makedirs(output_dir, exist_ok=True)
     try:
         ds = xhermes.open(data_dir, unnormalise=False)
