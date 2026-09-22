@@ -153,8 +153,8 @@ def animation(ds, flds, outpath=None, **kws):
         ):
             axis.set_ylabel(ylabel)
 
-        animation.blocks[0].ax.figure.subplots_adjust(hspace=0.5)
-        animation.save(str(outpath) + ".gif", writer=PillowWriter(fps=8))
+        animation.blocks[0].ax.figure.subplots_adjust(hspace=0.25)
+        animation.save(outpath.__str__() + ".gif", writer=PillowWriter(fps=8))
 
 
 if __name__ == "__main__":
