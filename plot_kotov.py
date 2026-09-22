@@ -184,6 +184,12 @@ if __name__ == "__main__":
     density_fields = [f"N{spec}" for spec in species_list]
     temperature_fields = [f"T{spec}" for spec in species_list]
     pressure_fields = [f"P{spec}" for spec in species_list]
+    lowN_src_fields = [
+        "Sd_low-n_recombination",
+        "Sd+_low-n_ionization",
+        "Sd+_low-n_external_src",
+        "Sd2_low-n_association",
+    ]
 
     anim_outpath = output_dir / "kotov_animation"
     animation(
@@ -192,8 +198,9 @@ if __name__ == "__main__":
             density_fields,
             temperature_fields,
             pressure_fields,
+            lowN_src_fields,
         ],
-        titles=["Densities", "Temperatures", "Pressures"],
+        titles=["Densities", "Temperatures", "Pressures", "Low-N Sources"],
         outpath=anim_outpath,
         logscale=True,
         mask_nonpositive=True,
