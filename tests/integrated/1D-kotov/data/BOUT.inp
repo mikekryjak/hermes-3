@@ -92,8 +92,13 @@ matrix_free_operator = true
 ######################################### Low-n sources ###########################################
 [low_n_sources]
 low_n_floor_fac = 10
-# Arbitrarily increase the source timescale
-low_n_timescale = 3000
+# Tied to physical timescale: fastest measured physical depletion timescale for
+# a low-n species in this run was Nd/Sd+_iz ~ 35 code units (min), ~116 (5th
+# percentile) - see Sep 2026 investigation. Values from 10-3000 all hit an
+# unrelated solver crash at t~6226 (see species:d+:collision_frequency
+# exception), so that's not a discriminator; picked 100 as close to the
+# physical timescale while keeping the source's peak magnitude bounded.
+low_n_timescale = 100
 diagnose = true
 
 ######################################### Deuterium ions ##########################################
