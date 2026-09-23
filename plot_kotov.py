@@ -219,7 +219,7 @@ if __name__ == "__main__":
             "Molecule Sources",
         ],
         outpath=anim_outpath,
-        logscale=True,
+        logscale=[True, False, False, False, False, False],
         mask_nonpositive=True,
         fps=8,
         tight_layout=False,
