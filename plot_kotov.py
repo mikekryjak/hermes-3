@@ -184,10 +184,18 @@ if __name__ == "__main__":
     density_fields = [f"N{spec}" for spec in species_list]
     temperature_fields = [f"T{spec}" for spec in species_list]
     pressure_fields = [f"P{spec}" for spec in species_list]
-    lowN_src_fields = [
-        "Sd_low-n_recombination",
+    ion_src_fields = [
         "Sd+_low-n_ionization",
         "Sd+_low-n_external_src",
+        "Sd+_iz",
+    ]
+    # Note that the regular recombination density source is misnamed (in my opinion)
+    # The source of atoms due to recombination is called "Sd+_rec", rather than "Sd_rec"
+    atom_src_fields = [
+        "Sd_low-n_recombination",
+        "Sd+_rec",
+    ]
+    molecule_src_fields = [
         "Sd2_low-n_association",
     ]
 
@@ -198,9 +206,18 @@ if __name__ == "__main__":
             density_fields,
             temperature_fields,
             pressure_fields,
-            lowN_src_fields,
+            ion_src_fields,
+            atom_src_fields,
+            molecule_src_fields,
         ],
-        titles=["Densities", "Temperatures", "Pressures", "Low-N Sources"],
+        titles=[
+            "Densities",
+            "Temperatures",
+            "Pressures",
+            "Ion Sources",
+            "Atom Sources",
+            "Molecule Sources",
+        ],
         outpath=anim_outpath,
         logscale=True,
         mask_nonpositive=True,
