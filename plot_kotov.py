@@ -125,6 +125,7 @@ def animation(ds, flds, outpath=None, **kws):
         outpath = this_dir / "kotov_animation"
     figsize = kws.pop("figsize", (18, 8))
     mask_nonpositive = kws.pop("mask_nonpositive", False)
+    xlims = kws.pop("xlims", None)
     if mask_nonpositive:
         ds = ds.copy()
         field_names = [
@@ -147,12 +148,22 @@ def animation(ds, flds, outpath=None, **kws):
         for axis in plot_axes:
             axis.legend(loc="lower left")
         plot_axes_in_order = list(dict.fromkeys(block.ax for block in animation.blocks))
+        if xlims is not None:
+            if len(xlims) != len(plot_axes_in_order):
+                raise ValueError(
+                    "xlims must contain one (xmin, xmax) pair per animation panel"
+                )
+            for axis, xlim in zip(plot_axes_in_order, xlims):
+                axis.set_xlim(xlim)
         for axis, ylabel in zip(
             plot_axes_in_order,
             [
-                "number density [normalised]",
-                "Temperature [normalised] ",
-                "Pressure [normalised] ",
+                "Number density [normalised]",
+                "Temperature [normalised]",
+                "Pressure [normalised]",
+                "Source [normalised]",
+                "Source [normalised]",
+                "Source [normalised]",
             ],
         ):
             axis.set_ylabel(ylabel)
@@ -218,8 +229,9 @@ if __name__ == "__main__":
             "Atom Sources",
             "Molecule Sources",
         ],
+        xlims=[(25, 30)] * 6,
         outpath=anim_outpath,
-        logscale=[True, False, False, False, False, False],
+        logscale=[True, True, True, False, False, False],
         mask_nonpositive=True,
         fps=8,
         tight_layout=False,
