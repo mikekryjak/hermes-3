@@ -84,6 +84,16 @@ private:
   /// Whether pseudo-reaction products keep their own temperature and velocity
   bool products_keep_own_state;
 
+  /// Temperature below which neutral atoms and molecules get an energy source
+  /// [normalised]; 0 disables it
+  BoutReal neutral_temperature_floor;
+  /// Neutral atom and molecule species that the temperature floor applies to
+  std::vector<std::string> neutral_species;
+  /// Energy source from the temperature floor, per species (diagnostic)
+  std::map<std::string, Field3D> low_T_energy_sources;
+  /// Energy source normalisation [W/m^3]
+  BoutReal energy_normalisation;
+
   void append_species_by_type(const SpeciesParser& species, SpeciesTypeAlt type);
 
   void instantiate_reactions();

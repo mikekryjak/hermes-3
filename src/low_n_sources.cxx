@@ -1,8 +1,10 @@
 #include "low_n_sources.hxx"
 
+#include <algorithm>
 #include <string>
 
 #include <bout/boutexception.hxx>
+#include <bout/constants.hxx>
 #include <bout/options.hxx>
 #include <bout/utils.hxx>
 
@@ -153,6 +155,16 @@ LowNSources::LowNSources(std::string name, Options& options)
           .doc("Pseudo-reaction products keep their own temperature and velocity, "
                "instead of taking the reactants' energy and momentum")
           .withDefault<bool>(false);
+  /// Temperature floor for neutral atoms and molecules
+  const BoutReal Tnorm = get<BoutReal>(options["units"]["eV"]);
+  this->neutral_temperature_floor =
+      options[name]["neutral_temperature_floor"]
+          .doc("Temperature below which neutral atoms and molecules get an energy "
+               "source that restores it over low_n_timescale [eV]. 0 disables it.")
+          .withDefault<BoutReal>(0.0)
+      / Tnorm;
+  this->energy_normalisation = SI::qe * get<BoutReal>(options["units"]["inv_meters_cubed"])
+                               * Tnorm / seconds_norm;
   // Diagnostics output switch
   this->diagnose = options[name]["diagnose"]
                        .doc("Whether or not to output diagnostics for the low-n sources")
@@ -184,6 +196,17 @@ LowNSources::LowNSources(std::string name, Options& options)
     this->density_thresholds[species_name] = this->low_n_floor_fac * density_floor;
   }
 
+  // Neutral atoms and molecules, for the temperature floor
+  for (const auto& element : this->base_species_order) {
+    const auto& groups = this->species_by_base.at(element);
+    for (const auto& sp : {groups.neutral, groups.molecule}) {
+      if (!sp.empty()
+          and std::find(this->neutral_species.begin(), this->neutral_species.end(), sp)
+                  == this->neutral_species.end()) {
+        this->neutral_species.push_back(sp);
+      }
+    }
+  }
   instantiate_reactions();
 }
 
@@ -380,11 +403,43 @@ void LowNSources::transform_impl(GuardedOptions& state) {
   for (auto& reaction : this->reactions) {
     reaction->transform_guarded(state);
   }
+
+  if (this->neutral_temperature_floor <= 0.0) {
+    return;
+  }
+  // Restore neutral atom and molecule temperatures to the floor over low_n_timescale.
+  // The energy comes from outside the system, like the external ion source.
+  for (const auto& sp : this->neutral_species) {
+    GuardedOptions species = state["species"][sp];
+    const Field3D N = get<Field3D>(species["density"]);
+    const Field3D T = get<Field3D>(species["temperature"]);
+    Field3D energy_source = zeroFrom(N);
+    BOUT_FOR(i, N.getRegion("RGN_NOBNDRY")) {
+      const BoutReal T_deficit =
+          std::max<BoutReal>(0.0, this->neutral_temperature_floor - T[i]);
+      energy_source[i] =
+          (3. / 2) * std::max<BoutReal>(0.0, N[i]) * T_deficit / this->low_n_timescale;
+    }
+    add(species["energy_source"], energy_source);
+    if (this->diagnose) {
+      this->low_T_energy_sources[sp] = energy_source;
+    }
+  }
 }
 
 void LowNSources::outputVars(Options& state) {
   for (auto& reaction : this->reactions) {
     reaction->outputVars(state);
+  }
+
+  for (const auto& [sp, energy_source] : this->low_T_energy_sources) {
+    set_with_attrs(state[fmt::format("E{:s}_low-T", sp)], energy_source,
+                   {{"time_dimension", "t"},
+                    {"units", "W m^-3"},
+                    {"conversion", this->energy_normalisation},
+                    {"long_name", sp + " energy source from the low-T floor"},
+                    {"species", sp},
+                    {"source", "low_n_sources"}});
   }
 }
 
