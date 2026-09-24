@@ -1,7 +1,7 @@
 #!/bin/bash
 
-lbl='low_n_srcs'
-run_dir_suffix='_nod2p_long_lowndt3e3'
+lbl='low_n'
+run_dir_suffix='_crash_debug_moreretries'
 build='kotovLowNSrcs'
 NMPI=1
 

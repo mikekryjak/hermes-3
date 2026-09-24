@@ -81,6 +81,7 @@ ksp_type = gmres                 # GMRES method
 pc_type = hypre                  # Preconditioner type
 pc_hypre_type = euclid           # Hypre preconditioner type
 max_nonlinear_iterations = 10    # Max Newton iterations per timestep
+max_snes_failures = 50
 lag_jacobian = 500               # How long to wait before Jacobian recalculation per Newton iteration
 
 # Tolerances

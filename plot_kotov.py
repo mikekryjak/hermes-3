@@ -8,7 +8,7 @@ from matplotlib.animation import PillowWriter
 this_dir = Path(__file__).parent
 
 include_d2_plus = False
-suffix = "_nod2p_long_lowndt3e3"
+suffix = "_crash_debug_moreretries"
 debug = False
 
 
@@ -162,7 +162,7 @@ def animation(ds, flds, outpath=None, **kws):
 
 
 if __name__ == "__main__":
-    lbl = f"low_n_srcs{suffix}"
+    lbl = f"low_n{suffix}"
     if debug:
         lbl += "_debug"
     data_dir = f"/home/oparry/code/arch-H3/kotov_testing/{lbl}"
