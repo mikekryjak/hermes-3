@@ -81,6 +81,9 @@ private:
   /// Strategy to use when generating sources
   std::string strategy;
 
+  /// Whether pseudo-reaction products keep their own temperature and velocity
+  bool products_keep_own_state;
+
   void append_species_by_type(const SpeciesParser& species, SpeciesTypeAlt type);
 
   void instantiate_reactions();
@@ -102,6 +105,7 @@ struct PseudoReactionSpec {
   BoutReal boost_species_threshold{0.0};
   bool boost_requires_deficit{false};
   std::string strategy;
+  bool products_keep_own_state{false};
 };
 
 class PseudoReaction : public Reaction {

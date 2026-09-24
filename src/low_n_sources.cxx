@@ -147,6 +147,12 @@ LowNSources::LowNSources(std::string name, Options& options)
       options[name]["strategy"]
           .doc("Strategy to use when generating sources to avoid low species density.")
           .withDefault(toString(LowNSrcsStrategy::standard));
+  /// Energy and momentum given to pseudo-reaction products
+  this->products_keep_own_state =
+      options[name]["products_keep_own_state"]
+          .doc("Pseudo-reaction products keep their own temperature and velocity, "
+               "instead of taking the reactants' energy and momentum")
+          .withDefault<bool>(false);
   // Diagnostics output switch
   this->diagnose = options[name]["diagnose"]
                        .doc("Whether or not to output diagnostics for the low-n sources")
@@ -303,6 +309,7 @@ void LowNSources::instantiate_reactions() {
           spec.boost_species_threshold = boost_species_threshold;
           spec.boost_requires_deficit = boost_requires_deficit;
           spec.strategy = this->strategy;
+          spec.products_keep_own_state = this->products_keep_own_state;
 
           // Instantiate and add to the (pseudo-)reaction list
           this->reactions.emplace_back(
@@ -393,6 +400,7 @@ PseudoReaction::PseudoReaction(Options& options, const PseudoReactionSpec& spec)
   this->boost_species_threshold = spec.boost_species_threshold;
   this->boost_requires_deficit = spec.boost_requires_deficit;
   this->strategy = LowNSrcsStrategyFromString(spec.strategy);
+  this->products_keep_own_state = spec.products_keep_own_state;
 
   if (this->diagnose) {
     // Set up a diagnostic for the density source of the target (produced) species

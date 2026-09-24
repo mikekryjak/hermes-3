@@ -343,6 +343,14 @@ void Reaction::transform_impl(GuardedOptions& state) {
                           * get<Field3D>(state["species"][sp_name]["velocity"]);
         energy_source = pop_change_s * rate_calc_results.rate * (3. / 2)
                         * get<Field3D>(state["species"][sp_name]["temperature"]);
+      } else if (pop_change_s > 0 and this->products_keep_own_state) {
+        // New particles carry the species' own velocity and temperature
+        momentum_source = pfactors.at(sp_name) * pop_change_s * rate_calc_results.rate
+                          * get<BoutReal>(state["species"][sp_name]["AA"])
+                          * get<Field3D>(state["species"][sp_name]["velocity"]);
+        energy_source = pfactors.at(sp_name) * pop_change_s * rate_calc_results.rate
+                        * (3. / 2)
+                        * get<Field3D>(state["species"][sp_name]["temperature"]);
       } else if (pop_change_s > 0) {
         // Species with net gain receive a proportion of the momentum and energy lost by
         // consumed reactants. See init_channel_weights() for default splitting factors.

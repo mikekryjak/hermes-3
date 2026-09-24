@@ -94,6 +94,11 @@ protected:
   /// Reaction data
   std::unique_ptr<ReactionData> rate_data;
 
+  /// If true, products gain particles at their own temperature and velocity, so
+  /// population-change sources leave the products' T and V unchanged. If false, products
+  /// receive a share of the consumed reactants' energy and momentum.
+  bool products_keep_own_state{false};
+
   /// Units and normalisations extracted to member vars for convenience
   Options& units;
   BoutReal Tnorm, Nnorm, FreqNorm;
