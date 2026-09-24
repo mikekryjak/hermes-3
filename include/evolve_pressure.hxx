@@ -86,6 +86,7 @@ private:
 
   Field3D source, final_source; ///< External pressure source
   Field3D Sp;                   ///< Total pressure source
+  Field3D P_raw;                ///< Evolved pressure before the floor at 0 (diagnostic)
   FieldGeneratorPtr source_prefactor_function;
 
   BoutReal hyper_z;   ///< Hyper-diffusion

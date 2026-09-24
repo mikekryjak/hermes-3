@@ -403,6 +403,20 @@ PseudoReaction::PseudoReaction(Options& options, const PseudoReactionSpec& spec)
     std::string src_name = fmt::format("low_n_{:s}", toString(this->type));
     add_diagnostic(this->target_species, label, description,
                    ReactionDiagnosticType::density_src, src_name, identity);
+
+    // Energy and momentum the reaction gives the target species
+    add_diagnostic(this->target_species,
+                   fmt::format("E{:s}_low-n_{:s}", this->target_species,
+                               toString(this->type)),
+                   fmt::format("Energy source of {:s} due to low-n {:s}",
+                               this->target_species, toString(this->type)),
+                   ReactionDiagnosticType::energy_src, src_name, identity);
+    add_diagnostic(this->target_species,
+                   fmt::format("F{:s}_low-n_{:s}", this->target_species,
+                               toString(this->type)),
+                   fmt::format("Momentum source of {:s} due to low-n {:s}",
+                               this->target_species, toString(this->type)),
+                   ReactionDiagnosticType::momentum_src, src_name, identity);
   }
 }
 

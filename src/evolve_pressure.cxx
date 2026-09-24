@@ -238,6 +238,10 @@ void EvolvePressure::transform_impl(GuardedOptions& state) {
   // Not using density boundary condition
   N = getNoBoundary<Field3D>(species["density"]);
 
+  if (diagnose) {
+    P_raw = P; // Before the floor, which hides negative pressures in the output
+  }
+
   Field3DParallel Pfloor = floor(P, 0.0);
   T = Pfloor / softFloor(N, density_floor);
   Pfloor = N * T; // Ensure consistency
@@ -463,6 +467,14 @@ void EvolvePressure::outputVars(Options& state) {
                     {"units", "Pa s^-1"},
                     {"conversion", Pnorm * Omega_ci},
                     {"long_name", std::string("Rate of change of ") + name + " pressure"},
+                    {"species", name},
+                    {"source", "evolve_pressure"}});
+
+    set_with_attrs(state[std::string("P") + name + std::string("_raw")], P_raw,
+                   {{"time_dimension", "t"},
+                    {"units", "Pa"},
+                    {"conversion", Pnorm},
+                    {"long_name", name + " pressure before the floor at 0"},
                     {"species", name},
                     {"source", "evolve_pressure"}});
 
