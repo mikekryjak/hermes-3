@@ -48,6 +48,9 @@ private:
 
   BoutReal hyper_z; ///< Hyper-diffusion
   BoutReal velocity_limit; ///< Smooth limit on |V|, normalised. <= 0 disables it
+  BoutReal velocity_limit_thermal; ///< Smooth limit on |V| as a factor of sqrt(T/AA)
+  std::string velocity_limit_ion;  ///< Species whose T also sets the limit, if larger
+  BoutReal velocity_limit_Tfloor;  ///< Lowest temperature used for that limit
 
   bool diagnose;                   ///< Output additional diagnostics?
   bool fix_momentum_boundary_flux; ///< Fix momentum flux to boundary condition?

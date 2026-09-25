@@ -71,6 +71,7 @@ private:
   bool thermal_conduction; ///< Include thermal conduction?
 
   bool p_div_v; ///< Use p*Div(v) form? False -> v * Grad(p)
+  BoutReal pressure_work_guard; ///< Scale V*Grad(P) by P/(P + this), normalised. <= 0 off
 
   bool evolve_log; ///< Evolve logarithm of P?
   Field3D logP;    ///< Natural logarithm of P

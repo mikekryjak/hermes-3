@@ -72,6 +72,25 @@ EvolveMomentum::EvolveMomentum(std::string name, Options& alloptions, Solver* so
                      / Cs0;
   }
 
+  velocity_limit_thermal =
+      options["velocity_limit_thermal"]
+          .doc("Smoothly limit |V| to this factor times the thermal speed sqrt(T/AA). "
+               "<= 0 disables it")
+          .withDefault<BoutReal>(-1.0);
+  velocity_limit_Tfloor = temperature_floor;
+  if (velocity_limit_thermal > 0.0) {
+    setPermissions(readOnly("species:{name}:temperature", Regions::Interior));
+    velocity_limit_ion =
+        options["velocity_limit_ion"]
+            .doc("Species whose temperature sets the thermal speed where it exceeds "
+                 "this species' own. Empty: own temperature only")
+            .withDefault<std::string>("");
+    if (!velocity_limit_ion.empty()) {
+      setPermissions(readOnly(fmt::format("species:{}:temperature", velocity_limit_ion),
+                              Regions::Interior));
+    }
+  }
+
   V.setBoundary(std::string("V") + name);
 
   diagnose =
@@ -118,6 +137,18 @@ void EvolveMomentum::transform_impl(GuardedOptions& state) {
     // Smooth limit |V| < velocity_limit. NV is recomputed from V below,
     // and NV_err relaxes the solver's momentum towards it.
     V = Field3DParallel(V / sqrt(1.0 + SQ(V / velocity_limit)));
+  }
+  if (velocity_limit_thermal > 0.0) {
+    // Same smooth limit, at a multiple of the thermal speed
+    Field3D Tlim = floor(getNoBoundary<Field3D>(species["temperature"]),
+                         velocity_limit_Tfloor);
+    if (!velocity_limit_ion.empty()) {
+      const Field3D Tion =
+          getNoBoundary<Field3D>(state["species"][velocity_limit_ion]["temperature"]);
+      Tlim = Tion + floor(Tlim - Tion, 0.0); // Larger of the two
+    }
+    const Field3D vlim = velocity_limit_thermal * sqrt(Tlim / AA);
+    V = Field3DParallel(V / sqrt(1.0 + SQ(V / vlim)));
   }
   V.applyBoundary();
 

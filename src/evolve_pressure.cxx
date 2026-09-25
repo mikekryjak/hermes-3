@@ -95,6 +95,14 @@ EvolvePressure::EvolvePressure(std::string name, Options& alloptions, Solver* so
                 .doc("Use p*Div(v) form? Default, false => v * Grad(p) form")
                 .withDefault<bool>(false);
 
+  pressure_work_guard =
+      options["pressure_work_guard"]
+          .doc("Scale the V * Grad(P) term by P / (P + this) [Pa], so it vanishes as "
+               "the cell's pressure goes to zero. <= 0 disables it")
+          .withDefault<BoutReal>(-1.0)
+      / (SI::qe * get<BoutReal>(alloptions["units"]["inv_meters_cubed"])
+         * get<BoutReal>(alloptions["units"]["eV"]));
+
   hyper_z = options["hyper_z"].doc("Hyper-diffusion in Z").withDefault(-1.0);
 
   hyper_z_T = options["hyper_z_T"]
@@ -306,6 +314,10 @@ void EvolvePressure::finally(const Options& state) {
           (5. / 3)
           * FV::Div_par_mod<hermes::Limiter>(P, V, fastest_wave, flow_ylow_advection);
       E_VgradP = V * Grad_par(P.asField3DParallel());
+      if (pressure_work_guard > 0.0) {
+        // Only the flux can then change P in a cell with P = 0
+        E_VgradP *= Pfloor / (Pfloor + pressure_work_guard);
+      }
       ddt(P) += (2. / 3) * E_VgradP;
     }
     flow_ylow_advection *= 5. / 2; // Energy flow
