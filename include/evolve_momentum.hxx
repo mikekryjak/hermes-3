@@ -47,6 +47,7 @@ private:
   bool use_div_par_fvv{true}; ///< Use Div_par_fvv instead of Div_par
 
   BoutReal hyper_z; ///< Hyper-diffusion
+  BoutReal velocity_limit; ///< Smooth limit on |V|, normalised. <= 0 disables it
 
   bool diagnose;                   ///< Output additional diagnostics?
   bool fix_momentum_boundary_flux; ///< Fix momentum flux to boundary condition?

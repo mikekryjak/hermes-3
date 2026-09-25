@@ -63,6 +63,15 @@ EvolveMomentum::EvolveMomentum(std::string name, Options& alloptions, Solver* so
 
   hyper_z = options["hyper_z"].doc("Hyper-diffusion in Z").withDefault(-1.0);
 
+  {
+    const auto& units = alloptions["units"];
+    const BoutReal Cs0 = units["meters"].as<BoutReal>() / units["seconds"].as<BoutReal>();
+    velocity_limit = options["velocity_limit"]
+                         .doc("Smoothly limit |V| to this speed [m/s]. <= 0 disables it")
+                         .withDefault<BoutReal>(-1.0)
+                     / Cs0;
+  }
+
   V.setBoundary(std::string("V") + name);
 
   diagnose =
@@ -105,6 +114,11 @@ void EvolveMomentum::transform_impl(GuardedOptions& state) {
   const BoutReal AA = get<BoutReal>(species["AA"]); // Atomic mass
 
   V = Field3DParallel(NV / (AA * Nlim));
+  if (velocity_limit > 0.0) {
+    // Smooth limit |V| < velocity_limit. NV is recomputed from V below,
+    // and NV_err relaxes the solver's momentum towards it.
+    V = Field3DParallel(V / sqrt(1.0 + SQ(V / velocity_limit)));
+  }
   V.applyBoundary();
 
   if (NV.isFci()) {
