@@ -164,11 +164,39 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                                        "excl. IZ, or afn: CX, IZ and NN collisions")
                                   .withDefault<std::string>("afn");
 
-  if (precondition) {
+  precon_level = options["precon_level"]
+                     .doc("Neutral preconditioner: existing, or a level of the "
+                          "neutral-phys-prec hierarchy: X1, X2-D, X2-T, X2-Tc")
+                     .withDefault<std::string>("existing");
+  precon_momentum = options["precon_momentum"]
+                        .doc("Add the momentum solve (I - gamma X) to a level?")
+                        .withDefault<bool>(false);
+
+  if (precondition and precon_level == "existing") {
     inv = Laplacian::create(&options["precon_laplace"]);
 
     inv->setInnerBoundaryFlags(INVERT_DC_GRAD | INVERT_AC_GRAD);
     inv->setOuterBoundaryFlags(INVERT_DC_GRAD | INVERT_AC_GRAD);
+  } else if (precondition) {
+    int nfactors = 0;
+    if (precon_level == "X1") {
+      nfactors = 1;
+    } else if (precon_level == "X2-D" or precon_level == "X2-T"
+               or precon_level == "X2-Tc") {
+      nfactors = 2;
+    } else {
+      throw BoutException("{}: unknown precon_level '{}'", name, precon_level);
+    }
+    Options& lxy_options = options["precon_laplacexy"];
+    if (!lxy_options["direct"].isSet()) {
+      lxy_options["direct"] = true; // LU by MUMPS
+    }
+    for (int i = 0; i < nfactors; i++) {
+      precon_factors.push_back({LaplaceXY::create(mesh, &lxy_options), {}, {}});
+    }
+    if (precon_momentum) {
+      precon_mom.solver = LaplaceXY::create(mesh, &lxy_options);
+    }
   }
 
   // Optionally output time derivatives
@@ -1066,8 +1094,125 @@ void NeutralMixed::outputVars(Options& state) {
   }
 }
 
+namespace {
+/// Copy of `a` whose guard cells at every x and y boundary are minus the
+/// interior value, so the face value (a_i + a_g)/2, and so every flux
+/// through the boundary, is zero
+Field3D zeroFluxCoef(Field3D a) {
+  mesh->communicate(a);
+  for (int j = 0; j < mesh->LocalNy; j++) {
+    for (int k = 0; k < mesh->LocalNz; k++) {
+      if (mesh->firstX()) {
+        a(mesh->xstart - 1, j, k) = -a(mesh->xstart, j, k);
+      }
+      if (mesh->lastX()) {
+        a(mesh->xend + 1, j, k) = -a(mesh->xend, j, k);
+      }
+    }
+  }
+  for (RangeIterator r = mesh->iterateBndryLowerY(); !r.isDone(); r++) {
+    for (int k = 0; k < mesh->LocalNz; k++) {
+      a(r.ind, mesh->ystart - 1, k) = -a(r.ind, mesh->ystart, k);
+    }
+  }
+  for (RangeIterator r = mesh->iterateBndryUpperY(); !r.isDone(); r++) {
+    for (int k = 0; k < mesh->LocalNz; k++) {
+      a(r.ind, mesh->yend + 1, k) = -a(r.ind, mesh->yend, k);
+    }
+  }
+  return a;
+}
+} // namespace
+
+Field3D NeutralMixed::PreconFactor::solve(const Field3D& r) const {
+  const Field2D rhs = DC(r * in);
+  return Field3D{solver->solve(rhs, zeroFrom(rhs))} * out;
+}
+
+void NeutralMixed::preconSetCoefs(BoutReal gamma) {
+  const BoutReal a = (5 + std::sqrt(10.)) / 3;
+  const BoutReal b = (5 - std::sqrt(10.)) / 3;
+  const Field3D one{1.0};
+  const Field3D T = Pnlim / Nnlim;
+
+  // A, B, in and out of each factor (PreconFactor), in the order solved.
+  // From derivation/discrete.md in the neutral-phys-prec project, with
+  // D(a) f = Div_a_Grad_perp_flows(a, f) and a, b = (5 +- sqrt(10))/3:
+  //   X1:    I - (5/3) gamma D(Dp) P^-1
+  //   X2-D:  (I - a gamma D(D)) (I - b gamma D(D))
+  //   X2-T:  (I - a gamma D(Dn) N^-1) (I - b gamma T D(Dn) P^-1)
+  //   X2-Tc: (I - a gamma D(DT) T^-1) (I - b gamma T D(D/T))
+  struct Coefs {
+    Field3D A, B, in, out;
+  };
+  std::vector<Coefs> coefs;
+  if (precon_level == "X1") {
+    coefs = {{(-5. / 3 * gamma) * DnnPn, Pnlim, one, Pnlim}};
+  } else if (precon_level == "X2-D") {
+    coefs = {{(-a * gamma) * Dnn, one, one, one}, {(-b * gamma) * Dnn, one, one, one}};
+  } else if (precon_level == "X2-T") {
+    coefs = {{(-a * gamma) * DnnNn, Nnlim, one, Nnlim},
+             {(-b * gamma) * DnnNn, Nnlim, 1.0 / T, Pnlim}};
+  } else { // X2-Tc
+    coefs = {{(-a * gamma) * Dnn * T, T, one, T},
+             {(-b * gamma) * Dnn / T, 1.0 / T, 1.0 / T, one}};
+  }
+
+  auto set = [](PreconFactor& f, const Coefs& c) {
+    f.solver->setCoefs(DC(zeroFluxCoef(c.A)), DC(c.B));
+    f.in = c.in;
+    f.out = c.out;
+  };
+  for (std::size_t i = 0; i < coefs.size(); i++) {
+    set(precon_factors[i], coefs[i]);
+  }
+  if (precon_momentum) {
+    // I - gamma X, X = D(Dn) N^-1: the cross-field viscosity acting on NVn
+    set(precon_mom, {(-gamma) * DnnNn, Nnlim, one, Nnlim});
+  }
+  precon_an = zeroFluxCoef(DnnNn);
+  precon_am = zeroFluxCoef(DnnNVn);
+}
+
+void NeutralMixed::preconLevel(BoutReal time, BoutReal gamma) {
+  // The coefficients are frozen at the state of the first call at each
+  // time and gamma
+  if (time != precon_time or gamma != precon_gamma) {
+    preconSetCoefs(gamma);
+    precon_time = time;
+    precon_gamma = gamma;
+  }
+
+  // Upper block-triangular, M~11 = I: z_p = S~^-1 r_p, then
+  //   z_n = r_n + gamma D(Dn) P^-1 z_p
+  //   z_m = M~22^-1 (r_m + gamma D(D nv) P^-1 z_p), M~22 = I or I - gamma X
+  Field3D zp = ddt(Pn);
+  for (const auto& f : precon_factors) {
+    zp = f.solve(zp);
+  }
+
+  Field3D fp = zp / Pnlim;
+  mesh->communicate(fp);
+  fp.applyBoundary("neumann");
+  Field3D flow_xlow, flow_ylow;
+
+  ddt(Nn) += gamma * Div_a_Grad_perp_flows(precon_an, fp, flow_xlow, flow_ylow);
+  if (evolve_momentum) {
+    const Field3D rm =
+        ddt(NVn) + gamma * Div_a_Grad_perp_flows(precon_am, fp, flow_xlow, flow_ylow);
+    ddt(NVn) = precon_momentum ? precon_mom.solve(rm) : rm;
+  }
+  ddt(Pn) = zp;
+}
+
 void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma) {
   if (!precondition) {
+    return;
+  }
+
+  if (precon_level != "existing") {
+    preconLevel(get<BoutReal>(state["time"]), gamma);
+    checkPreconFinite();
     return;
   }
 
@@ -1108,6 +1253,10 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
     ddt(NVn) -= gamma * FV::Div_a_Grad_perp(DnnNVn / Pnlim, ddt(Pn));
   }
 
+  checkPreconFinite();
+}
+
+void NeutralMixed::checkPreconFinite() {
   for (auto& i : Nn.getRegion("RGN_NOBNDRY")) {
     if (!std::isfinite(ddt(Nn)[i])) {
       throw BoutException("Precon ddt(N{}) non-finite at {}\n", name, i);

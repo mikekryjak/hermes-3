@@ -5,7 +5,9 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
+#include <bout/invert/laplacexy.hxx>
 #include <bout/invert_laplace.hxx>
 
 #include "component.hxx"
@@ -78,6 +80,23 @@ private:
   bool precon_laplacexy{false};   ///< Use LaplaceXY?
   bool lax_flux;                  ///< Use Lax flux for advection terms
   std::unique_ptr<Laplacian> inv; ///< Laplacian inversion used for preconditioning
+
+  /// One LaplaceXY factor of a preconditioner level: solves
+  /// B w + Div(A Grad_perp w) = in * r and returns z = out * w
+  struct PreconFactor {
+    std::unique_ptr<LaplaceXY> solver;
+    Field3D in, out;
+    Field3D solve(const Field3D& r) const;
+  };
+  std::string precon_level; ///< existing, X1, X2-D, X2-T or X2-Tc
+  bool precon_momentum;     ///< Momentum solve (I - gamma X) in a level?
+  std::vector<PreconFactor> precon_factors; ///< Factors of S~, solved in turn
+  PreconFactor precon_mom;                  ///< The momentum solve
+  Field3D precon_an, precon_am; ///< DnnNn and DnnNVn with zero boundary flux
+  BoutReal precon_time{-1}, precon_gamma{-1}; ///< Time and gamma of the factors
+  void preconSetCoefs(BoutReal gamma);
+  void preconLevel(BoutReal time, BoutReal gamma);
+  void checkPreconFinite();
 
   Field3D density_source, pressure_source, momentum_source; ///< External input source
   Field3D Sn, Sp, Snv; ///< Particle, pressure and momentum source
