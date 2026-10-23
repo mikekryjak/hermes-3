@@ -165,14 +165,17 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
                                   .withDefault<std::string>("afn");
 
   precon_level = options["precon_level"]
-                     .doc("Neutral preconditioner: existing, or a level of the "
-                          "neutral-phys-prec hierarchy: X1, X2-D, X2-T, X2-Tc")
+                     .doc("Neutral preconditioner: existing, existing-fixed (its "
+                          "back-substitution sign and conduction factor fixed), or "
+                          "a level of the neutral-phys-prec hierarchy: X1, X2-D, "
+                          "X2-T, X2-Tc")
                      .withDefault<std::string>("existing");
   precon_momentum = options["precon_momentum"]
                         .doc("Add the momentum solve (I - gamma X) to a level?")
                         .withDefault<bool>(false);
 
-  if (precondition and precon_level == "existing") {
+  if (precondition
+      and (precon_level == "existing" or precon_level == "existing-fixed")) {
     inv = Laplacian::create(&options["precon_laplace"]);
 
     inv->setInnerBoundaryFlags(INVERT_DC_GRAD | INVERT_AC_GRAD);
@@ -1210,11 +1213,18 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
     return;
   }
 
-  if (precon_level != "existing") {
+  if (precon_level != "existing" and precon_level != "existing-fixed") {
     preconLevel(get<BoutReal>(state["time"]), gamma);
     checkPreconFinite();
     return;
   }
+
+  // existing-fixed: the pressure solve keeps conduction's 5/3 as well as
+  // advection's, and the back-substitution adds gamma U x_P, as the block
+  // factorisation of I - gamma J gives
+  const bool fixed = precon_level == "existing-fixed";
+  const BoutReal cp = fixed ? 10. / 3 : 5. / 3;
+  const BoutReal back_sign = fixed ? 1. : -1.;
 
   // First matrix
   //   ( I   0)
@@ -1232,9 +1242,9 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
   //
   // d Laplace_perp(x) + a x + (1/c1)Grad(c2) dot Grad_perp(x) = b
   inv->setCoefA(1 - gamma * FV::Div_a_Grad_perp(Dnn, logPnlim));
-  inv->setCoefC1(-1. / ((gamma * 5. / 3) * Dnn));
+  inv->setCoefC1(-1. / ((gamma * cp) * Dnn));
   inv->setCoefC2(logPnlim);
-  inv->setCoefD((-gamma * 5. / 3) * Dnn);
+  inv->setCoefD((-gamma * cp) * Dnn);
 
   // inv->setInnerBoundaryFlags(INVERT_DC_GRAD);
   // inv->setOuterBoundaryFlags(INVERT_DC_GRAD);
@@ -1247,10 +1257,10 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
   // ( I   E^-1U )
   // ( 0     I   )
 
-  ddt(Nn) -= gamma * FV::Div_a_Grad_perp(DnnNn / Pnlim, ddt(Pn));
+  ddt(Nn) += back_sign * gamma * FV::Div_a_Grad_perp(DnnNn / Pnlim, ddt(Pn));
 
   if (evolve_momentum) {
-    ddt(NVn) -= gamma * FV::Div_a_Grad_perp(DnnNVn / Pnlim, ddt(Pn));
+    ddt(NVn) += back_sign * gamma * FV::Div_a_Grad_perp(DnnNVn / Pnlim, ddt(Pn));
   }
 
   checkPreconFinite();
