@@ -166,16 +166,18 @@ NeutralMixed::NeutralMixed(const std::string& name, Options& alloptions, Solver*
 
   precon_level = options["precon_level"]
                      .doc("Neutral preconditioner: existing, existing-fixed (its "
-                          "back-substitution sign and conduction factor fixed), or "
-                          "a level of the neutral-phys-prec hierarchy: X1, X2-D, "
-                          "X2-T, X2-Tc")
+                          "back-substitution sign and conduction factor fixed), "
+                          "existing-pr687 (boutproject/hermes-3 PR 687's version), "
+                          "or a level of the neutral-phys-prec hierarchy: X1, "
+                          "X2-D, X2-T, X2-Tc")
                      .withDefault<std::string>("existing");
   precon_momentum = options["precon_momentum"]
                         .doc("Add the momentum solve (I - gamma X) to a level?")
                         .withDefault<bool>(false);
 
   if (precondition
-      and (precon_level == "existing" or precon_level == "existing-fixed")) {
+      and (precon_level == "existing" or precon_level == "existing-fixed"
+           or precon_level == "existing-pr687")) {
     inv = Laplacian::create(&options["precon_laplace"]);
 
     inv->setInnerBoundaryFlags(INVERT_DC_GRAD | INVERT_AC_GRAD);
@@ -1213,7 +1215,8 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
     return;
   }
 
-  if (precon_level != "existing" and precon_level != "existing-fixed") {
+  if (precon_level != "existing" and precon_level != "existing-fixed"
+      and precon_level != "existing-pr687") {
     preconLevel(get<BoutReal>(state["time"]), gamma);
     checkPreconFinite();
     return;
@@ -1222,9 +1225,15 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
   // existing-fixed: the pressure solve keeps conduction's 5/3 as well as
   // advection's, and the back-substitution adds gamma U x_P, as the block
   // factorisation of I - gamma J gives
-  const bool fixed = precon_level == "existing-fixed";
-  const BoutReal cp = fixed ? 10. / 3 : 5. / 3;
+  // existing-pr687: boutproject/hermes-3 PR 687's version: existing-fixed's
+  // sign, 10/3 on the Laplacian's D only when neutral conduction is on
+  // (C1 keeps 5/3), and neumann boundaries on the perturbations
+  const bool pr687 = precon_level == "existing-pr687";
+  const bool fixed = precon_level == "existing-fixed" or pr687;
+  const BoutReal cp = (fixed and (not pr687 or neutral_conduction)) ? 10. / 3 : 5. / 3;
+  const BoutReal cp_grad = pr687 ? 5. / 3 : cp;
   const BoutReal back_sign = fixed ? 1. : -1.;
+  const std::string bndry = pr687 ? "neumann" : "dirichlet";
 
   // First matrix
   //   ( I   0)
@@ -1232,7 +1241,7 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
 
   Field3D DTdtN = Dnn * Tn * ddt(Nn);
   mesh->communicate(DTdtN);
-  DTdtN.applyBoundary("dirichlet");
+  DTdtN.applyBoundary(bndry);
 
   ddt(Pn) -= (gamma * 5. / 3) * FV::Div_a_Grad_perp(DTdtN, logPnlim);
 
@@ -1242,7 +1251,7 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
   //
   // d Laplace_perp(x) + a x + (1/c1)Grad(c2) dot Grad_perp(x) = b
   inv->setCoefA(1 - gamma * FV::Div_a_Grad_perp(Dnn, logPnlim));
-  inv->setCoefC1(-1. / ((gamma * cp) * Dnn));
+  inv->setCoefC1(-1. / ((gamma * cp_grad) * Dnn));
   inv->setCoefC2(logPnlim);
   inv->setCoefD((-gamma * cp) * Dnn);
 
@@ -1251,7 +1260,7 @@ void NeutralMixed::precon([[maybe_unused]] const Options& state, BoutReal gamma)
 
   ddt(Pn) = inv->solve(ddt(Pn));
   mesh->communicate(ddt(Pn));
-  ddt(Pn).applyBoundary("dirichlet");
+  ddt(Pn).applyBoundary(bndry);
 
   // Third matrix: update Nn and NVn equations
   // ( I   E^-1U )
