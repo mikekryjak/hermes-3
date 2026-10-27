@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -29,7 +30,7 @@ using bout::globals::mesh;
 BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& alloptions,
                                            Solver*)
     : NamedComponent(name, {readOnly("species:{sp}:{input_vars}"),
-                            readOnly("fields:Apar_flutter"),
+                            readIfSet("fields:Apar_flutter"),
                             readWrite("species:{sp}:{output_vars}")}) {
 
   // Get settings for each species
@@ -82,6 +83,38 @@ BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& all
             .doc("Flux limiter factor. < 0 means no limit. Typical is 0.2 "
                  "for electrons, 1 for ions.")
             .withDefault(-1.0);
+    all_kappa_limit_face[name] =
+        options["kappa_limit_face"]
+            .doc("Flux limiter: use the mean over the two cell faces of |q_SH / q_fl| "
+                 "from face gradients, instead of the centred gradient")
+            .withDefault<bool>(false);
+    all_kappa_limit_smooth[name] =
+        options["kappa_limit_smooth"]
+            .doc("Flux limiter: if > 0, replace |x| by sqrt(x^2 + eps^2), x = q_SH / q_fl")
+            .withDefault(0.0);
+
+    // Caps on kappa_par on closed field lines only
+    const Options& units = alloptions["units"];
+    const BoutReal rho_s0 = units["meters"];
+    const BoutReal Omega_ci = 1. / units["seconds"].as<BoutReal>();
+    all_kappa_cap_fs[name] =
+        options["kappa_cap_fs"]
+            .doc("Closed field lines: cap kappa_par at C n v_th dl, dl the parallel "
+                 "cell length, by kappa / (1 + kappa / cap). <= 0 means off.")
+            .withDefault(-1.0);
+    all_kappa_cap_tau[name] =
+        options["kappa_cap_tau"]
+                .doc("Closed field lines: kappa_par / (1 + kappa_par tau / (n dl^2)), "
+                     "tau in seconds, dl the parallel cell length. <= 0 means off.")
+                .withDefault(-1.0)
+        * Omega_ci;
+    all_kappa_cap_mfp_length[name] =
+        options["kappa_cap_mfp_length"]
+                .doc("Closed field lines: kappa_par / (1 + lambda_mfp / L), L in "
+                     "metres, lambda_mfp = v_th / nu. <= 0 means off.")
+                .withDefault(-1.0)
+        / rho_s0;
+
     all_conduction_collisions_mode[name] =
         options["conduction_collisions_mode"]
             .doc("Can be multispecies: all collisions, or "
@@ -115,6 +148,24 @@ BraginskiiConduction::BraginskiiConduction(const std::string& name, Options& all
   substitutePermissions("sp", species);
 
   conduction_method = alloptions["conduction_method"].withDefault(conduction_method);
+
+  use_petsc_operator =
+      alloptions["use_petsc_operator"]
+          .doc("Use Petsc for parallel heat conduction. Grids need the weights.")
+          .withDefault<bool>(false);
+
+  if (use_petsc_operator) {
+
+    if (!mesh->isFci()) {
+      throw BoutException("Used Petsc operator for Braginskii conduction without Fci!");
+    }
+#if BOUT_HAS_PETSC
+    PetscOperators ops(mesh);
+    petsc_parallel = ops.getParallel();
+#else
+    throw BoutException("petsc_operator requires PETSc");
+#endif
+  }
 }
 
 void BraginskiiConduction::transform_impl(GuardedOptions& state) {
@@ -266,16 +317,87 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
        * DOI 10.1002/ctpp.200610001
        */
 
-      // Spitzer-Harm heat flux
-      const Field3D q_SH = kappa_par * Grad_par(T);
       // Free-streaming flux
       const Field3D q_fl = kappa_limit_alpha * N * T * sqrt(T / AA);
+      const BoutReal eps = all_kappa_limit_smooth[name];
 
-      // This results in a harmonic average of the heat fluxes
-      kappa_par /= (1. + abs(q_SH / softFloor(q_fl, 1e-10)));
+      if (all_kappa_limit_face[name] or eps > 0.0) {
+        // |q_SH / q_fl|, smoothed by sqrt(x^2 + eps^2), either from the centred
+        // gradient or as the mean over the two faces of face-gradient values
+        Field3D x_abs;
+        if (all_kappa_limit_face[name]) {
+          const Coordinates* coord = mesh->getCoordinates();
+          const Field3D Tfa = toFieldAligned(T, "RGN_NOX");
+          Field3D grad_up{zeroFrom(Tfa)};
+          Field3D grad_down{zeroFrom(Tfa)};
+          BOUT_FOR(i, Tfa.getRegion("RGN_NOBNDRY")) {
+            const auto iyp = i.yp();
+            const auto iym = i.ym();
+            const BoutReal dl = coord->dy()[i] * sqrt(coord->g_22()[i]);
+            grad_up[i] = (Tfa[iyp] - Tfa[i])
+                         / (0.5 * (dl + coord->dy()[iyp] * sqrt(coord->g_22()[iyp])));
+            grad_down[i] = (Tfa[i] - Tfa[iym])
+                           / (0.5 * (dl + coord->dy()[iym] * sqrt(coord->g_22()[iym])));
+          }
+          const Field3D x_up = kappa_par * fromFieldAligned(grad_up) / softFloor(q_fl, 1e-10);
+          const Field3D x_down =
+              kappa_par * fromFieldAligned(grad_down) / softFloor(q_fl, 1e-10);
+          x_abs = 0.5 * (sqrt(SQ(x_up) + SQ(eps)) + sqrt(SQ(x_down) + SQ(eps)));
+        } else {
+          const Field3D x = kappa_par * Grad_par(T) / softFloor(q_fl, 1e-10);
+          x_abs = sqrt(SQ(x) + SQ(eps));
+        }
+        kappa_par /= (1. + x_abs);
+        if (all_diagnose[name]) {
+          all_kappa_limit_factor[name] = 1. / (1. + x_abs);
+        }
+      } else {
+        // Spitzer-Harm heat flux
+        const Field3D q_SH = kappa_par * Grad_par(T);
+
+        // This results in a harmonic average of the heat fluxes
+        kappa_par /= (1. + abs(q_SH / softFloor(q_fl, 1e-10)));
+
+        if (all_diagnose[name]) {
+          all_kappa_limit_factor[name] = 1. / (1. + abs(q_SH / softFloor(q_fl, 1e-10)));
+        }
+      }
 
       // Values of kappa on cell boundaries are needed for fluxes
       mesh->communicate(kappa_par);
+    }
+
+    const BoutReal cap_fs = all_kappa_cap_fs[name];
+    const BoutReal cap_tau = all_kappa_cap_tau[name];
+    const BoutReal cap_mfp_length = all_kappa_cap_mfp_length[name];
+    if (cap_fs > 0.0 or cap_tau > 0.0 or cap_mfp_length > 0.0) {
+      // Caps on closed field lines (the core) only, where a two-cell Te mode
+      // is not removed by any boundary
+      const Coordinates* coord = mesh->getCoordinates();
+      const Field3D kappa_uncapped = kappa_par;
+      BOUT_FOR(i, kappa_par.getRegion("RGN_NOBNDRY")) {
+        if (!mesh->periodicY(i.x())) {
+          continue;
+        }
+        const BoutReal dl = coord->dy()[i] * sqrt(coord->g_22()[i]); // Parallel length
+        const BoutReal n = std::max(N[i], 1e-10);
+        const BoutReal v_th = sqrt(std::max(T[i], 0.0) / AA);
+        BoutReal k = kappa_par[i];
+        if (cap_fs > 0.0) {
+          k /= 1. + k / std::max(cap_fs * n * v_th * dl, 1e-10);
+        }
+        if (cap_tau > 0.0) {
+          k /= 1. + k * cap_tau / (n * SQ(dl));
+        }
+        if (cap_mfp_length > 0.0) {
+          k /= 1. + v_th * tau[i] / cap_mfp_length;
+        }
+        kappa_par[i] = k;
+      }
+      mesh->communicate(kappa_par);
+      if (all_diagnose[name]) {
+        all_kappa_cap_factor[name] = kappa_par / kappa_uncapped;
+      }
     }
 
     // Fci does not work with mesh->iterateBndryLowerY(), so set the boundaries differently
@@ -304,12 +426,20 @@ void BraginskiiConduction::transform_impl(GuardedOptions& state) {
     // Note: Flux through boundary turned off, because sheath heat flux
     // is calculated and removed separately
     set(species["kappa_par"], kappa_par);
-    add(species["energy_source"],
-        Div_par_K_Grad_par_mod(kappa_par, T, flow_ylow_conduction, false,
-                               conduction_method));
-    add(species["energy_flow_ylow"], flow_ylow_conduction);
 
-    if (state.isSection("fields") and state["fields"].isSet("Apar_flutter")) {
+    // Petsc can be used to calculate the divergence of the heat flux
+    if (use_petsc_operator) {
+#if BOUT_HAS_PETSC
+      all_energy_source_conduction[name] = petsc_parallel.Div_par_K_Grad_par(kappa_par, T);
+      add(species["energy_source"], all_energy_source_conduction[name]);
+#endif
+    } else {
+      all_energy_source_conduction[name] = Div_par_K_Grad_par_mod(
+          kappa_par, T, flow_ylow_conduction, false, conduction_method);
+      add(species["energy_source"], all_energy_source_conduction[name]);
+      add(species["energy_flow_ylow"], flow_ylow_conduction);
+    }
+    if (state.isSection("fields") and IS_SET(state["fields:Apar_flutter"])) {
       // Magnetic flutter term. The operator splits into 4 pieces:
       // Div(k b b.Grad(T)) = Div(k b0 b0.Grad(T)) + Div(k d0 db.Grad(T))
       //                    + Div(k db b0.Grad(T)) + Div(k db db.Grad(T))
@@ -368,5 +498,45 @@ void BraginskiiConduction::outputVars(Options& state) {
                     {"long_name", name + " conduction through Y cell face."},
                     {"species", name},
                     {"source", "evolve_pressure"}});
+
+    if (all_energy_source_conduction.count(name) != 0) {
+      set_with_attrs(state[fmt::format("SP{}_cond", name)],
+                     (2. / 3) * all_energy_source_conduction[name],
+                     {{"time_dimension", "t"},
+                      {"units", "Pa s^-1"},
+                      {"conversion", Pnorm * Omega_ci},
+                      {"standard_name", "pressure source"},
+                      {"long_name", name
+                                        + " pressure source from parallel conduction,"
+                                          " magnetic flutter excluded"},
+                      {"species", name},
+                      {"source", "braginskii_conduction"}});
+    }
+
+    if (all_kappa_limit_factor.count(name) != 0) {
+      set_with_attrs(state[fmt::format("kappa_lim_{}", name)],
+                     all_kappa_limit_factor[name],
+                     {{"time_dimension", "t"},
+                      {"units", ""},
+                      {"conversion", 1.0},
+                      {"long_name", name
+                                        + " flux-limiter factor: kappa_par after the"
+                                          " limiter over kappa_par before"},
+                      {"species", name},
+                      {"source", "braginskii_conduction"}});
+    }
+
+    if (all_kappa_cap_factor.count(name) != 0) {
+      set_with_attrs(state[fmt::format("kappa_cap_{}", name)],
+                     all_kappa_cap_factor[name],
+                     {{"time_dimension", "t"},
+                      {"units", ""},
+                      {"conversion", 1.0},
+                      {"long_name", name
+                                        + " closed-field-line cap factor: kappa_par"
+                                          " after the caps over kappa_par before"},
+                      {"species", name},
+                      {"source", "braginskii_conduction"}});
+    }
   }
 }
